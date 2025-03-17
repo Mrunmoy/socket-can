@@ -20,7 +20,7 @@
             cmake
             gdb
             pkg-config
-            gtest       # For tests later
+            gtest
             linuxHeaders
           ];
 
@@ -32,13 +32,12 @@
         };
 
         ########################################################################
-        # Package: nix build .#default  (will call CMake)
+        # Package: nix build .#default  (build library only)
         ########################################################################
         packages.default = pkgs.stdenv.mkDerivation {
           pname = "socketcan";
           version = "0.1.0";
 
-          # Use this git/dir as the source
           src = self;
 
           nativeBuildInputs = [
@@ -51,21 +50,59 @@
             pkgs.linuxHeaders
           ];
 
-          # CMake configure
           configurePhase = ''
             cmake -S . -B build \
               -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_INSTALL_PREFIX=$out
+              -DCMAKE_INSTALL_PREFIX=$out \
+              -DBUILD_TESTING=OFF
           '';
 
-          # CMake build
           buildPhase = ''
             cmake --build build --config Release
           '';
 
-          # CMake install (expects install() rules in CMakeLists.txt)
           installPhase = ''
             cmake --install build
+          '';
+        };
+
+        ########################################################################
+        # Package: nix build .#tests  (build tests only)
+        ########################################################################
+        packages.tests = pkgs.stdenv.mkDerivation {
+          pname = "socketcan-tests";
+          version = "0.1.0";
+
+          src = self;
+
+          # IMPORTANT: avoid RPATH sanitization so test binary is allowed
+          dontFixup = true;
+          dontPatchELF = true;
+
+          nativeBuildInputs = [
+            pkgs.cmake
+            pkgs.gcc
+            pkgs.pkg-config
+          ];
+
+          buildInputs = [
+            pkgs.linuxHeaders
+            pkgs.gtest
+          ];
+
+          configurePhase = ''
+            cmake -S . -B build \
+              -DCMAKE_BUILD_TYPE=Debug \
+              -DBUILD_TESTING=ON
+          '';
+
+          buildPhase = ''
+            cmake --build build --config Debug
+          '';
+
+          installPhase = ''
+            mkdir -p $out
+            cp build/tests/socketcan_tests $out/
           '';
         };
       });
