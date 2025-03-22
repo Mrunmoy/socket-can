@@ -9,12 +9,7 @@ add_executable(socketcan_tests
 )
 
 # Link against the main library + GTest
-target_link_libraries(socketcan_tests
-    PRIVATE
-        socketcan
-        gtest
-        gtest_main
-)
+target_link_libraries(socketcan_tests PRIVATE socketcan_static gtest gtest_main)
 
 # Register test with CTest
 add_test(NAME socketcan_tests
