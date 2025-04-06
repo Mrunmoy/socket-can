@@ -112,6 +112,27 @@ void Canbus::send(const Frame& frame)
         throw CanError("send() on closed Canbus");
     }
 
+    // Validate DLC (CAN classic supports only 0..8)
+    if (frame.dlc > 8)
+        throw CanError("Invalid DLC (>8) for CAN classic frame");
+
+    if (frame.rtr) {
+        // RTR frames must NOT contain data bytes
+        for (size_t i = 0; i < frame.dlc; ++i) {
+            if (frame.data[i] != 0)
+                throw CanError("RTR frame cannot contain data bytes");
+        }
+    }
+
+    // Validate CAN ID ranges
+    if (!frame.extended) {
+        if (frame.id > 0x7FF)
+            throw CanError("Standard CAN ID out of range (>0x7FF)");
+    } else {
+        if (frame.id > 0x1FFFFFFF)
+            throw CanError("Extended CAN ID out of range (>29-bit)");
+    }
+
     struct can_frame cf;
     std::memset(&cf, 0, sizeof(cf));
 

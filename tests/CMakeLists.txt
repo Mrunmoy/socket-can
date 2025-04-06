@@ -1,7 +1,8 @@
 # Collect test sources
 set(TEST_SOURCES
     UnitTests.cpp
-    SendReceiveTests.cpp
+    CanbusIntegrationTests.cpp
+    CanbusUnitTests.cpp
 )
 
 # Build test executable
