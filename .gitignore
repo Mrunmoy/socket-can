@@ -1,41 +1,50 @@
-# Prerequisites
-*.d
+# CMake build directories
+/build/
+/build-*/
+/cmake-build-*/
 
-# Compiled Object files
-*.slo
-*.lo
+# Nix build symlink
+/result
+
+# Common CMake artefacts
+CMakeCache.txt
+CMakeFiles/
+CTestTestfile.cmake
+cmake_install.cmake
+Makefile
+
+# Tests output inside build folders
+tests/*/CMakeFiles/
+tests/*/*.o
+tests/*/*.obj
+tests/*/*.pdb
+
+# Editors
+*.swp
+*.swo
+*.vim
+.vscode/
+.idea/
+*.user
+*.workspace
+
+# Compiled binaries produced by CMake
 *.o
 *.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
 *.a
-*.lib
-
-# Executables
+*.so
+*.dll
+*.dylib
 *.exe
 *.out
-*.app
 
-# debug information files
-*.dwo
+# Backup files
+*~
+*.bak
+
+# Python virtualenvs (future bindings)
+venv/
+.env/
+
+# Rust target dir (future bindings)
+target/
