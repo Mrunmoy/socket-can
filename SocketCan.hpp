@@ -3,6 +3,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstddef>
 #include <stdexcept>
 #include <string>
 
@@ -29,23 +30,64 @@ public:
     {}
 };
 
+// ---------------------------------------------------------------------------
+// Classic CAN frame — up to 8 bytes of payload
+// ---------------------------------------------------------------------------
 struct Frame
 {
-    uint32_t id = 0;                     // 11-bit or 29-bit ID
-    bool     extended = false;           // Standard vs extended frame
-    bool     rtr      = false;           // Remote transmission request
-    uint8_t  dlc      = 0;               // 0..8 bytes
-    std::array<uint8_t, 8> data{};      // CAN classic payload
+    uint32_t id       = 0;              // 11-bit or 29-bit ID
+    bool     extended = false;          // Standard vs extended frame
+    bool     rtr      = false;          // Remote transmission request
+    uint8_t  dlc      = 0;              // 0..8 bytes
+    std::array<uint8_t, 8> data{};     // Classic CAN payload
 };
 
+// ---------------------------------------------------------------------------
+// CAN FD frame — up to 64 bytes of payload
+// ---------------------------------------------------------------------------
+struct FdFrame
+{
+    uint32_t id       = 0;                          // 11-bit or 29-bit ID
+    bool     extended = false;                      // Standard vs extended frame
+    bool     brs      = false;                      // Bit-rate switch
+    bool     esi      = false;                      // Error state indicator
+    uint8_t  len      = 0;                          // 0..64 bytes
+    std::array<uint8_t, CANFD_MAX_DLEN> data{};    // CAN FD payload (64 bytes)
+};
+
+// ---------------------------------------------------------------------------
+// Listener interfaces — implement to receive dispatched frames
+// ---------------------------------------------------------------------------
+
+class IClassicFrameListener
+{
+public:
+    virtual ~IClassicFrameListener() = default;
+    virtual void onClassicFrame(const Frame& frame) = 0;
+};
+
+class IFdFrameListener
+{
+public:
+    virtual ~IFdFrameListener() = default;
+    virtual void onFdFrame(const FdFrame& frame) = 0;
+};
+
+// ---------------------------------------------------------------------------
+// Canbus — single socket supporting both Classic CAN and CAN FD
+// ---------------------------------------------------------------------------
 class Canbus
 {
 public:
+    // Maximum number of listeners of each type (zero-heap, fixed-size arrays).
+    static constexpr std::size_t MaxListeners = 8;
+
     // Open and bind to a CAN interface (e.g. "vcan0", "can0").
-    // loopback=false if you don’t want to see your own frames.
+    // CAN FD frames are enabled on the socket automatically.
+    // loopback=false if you don't want to see your own frames.
     explicit Canbus(const std::string& ifname,
-                       bool loopback = true,
-                       bool blocking = true);
+                    bool loopback = true,
+                    bool blocking = true);
 
     ~Canbus();
 
@@ -55,16 +97,46 @@ public:
     Canbus(Canbus&& other) noexcept;
     Canbus& operator=(Canbus&& other) noexcept;
 
-    // Send a CAN frame (blocking).
+    // -----------------------------------------------------------------------
+    // Send
+    // -----------------------------------------------------------------------
+
+    // Send a Classic CAN frame (blocking).
     void send(const Frame& frame);
 
-    // Receive a CAN frame.
-    // Returns true if a frame was received before timeout.
-    // Returns false on timeout.
-    // Throws on errors.
+    // Send a CAN FD frame (blocking).
+    void send(const FdFrame& frame);
+
+    // -----------------------------------------------------------------------
+    // Receive — direct (backward-compatible)
+    // -----------------------------------------------------------------------
+
+    // Receive a Classic CAN frame directly into 'frame'.
+    // Returns true if a frame was received before timeout, false on timeout.
+    // Throws CanError if a CAN FD frame arrives — use the listener-based
+    // receive() overload for mixed-type traffic.
     bool receive(Frame& frame,
                  std::chrono::milliseconds timeout =
                      std::chrono::milliseconds{-1}); // -1 => block forever
+
+    // -----------------------------------------------------------------------
+    // Receive — listener-dispatching
+    // -----------------------------------------------------------------------
+
+    // Read one frame and dispatch it to all registered listeners of the
+    // matching type. Returns true if a frame was dispatched, false on timeout.
+    bool receive(std::chrono::milliseconds timeout =
+                     std::chrono::milliseconds{-1}); // -1 => block forever
+
+    // -----------------------------------------------------------------------
+    // Listener registration
+    // -----------------------------------------------------------------------
+
+    // Register a Classic CAN frame listener (up to MaxListeners). Throws if full.
+    void addClassicListener(IClassicFrameListener* listener);
+
+    // Register a CAN FD frame listener (up to MaxListeners). Throws if full.
+    void addFdListener(IFdFrameListener* listener);
 
     // Get underlying file descriptor if you want to use your own poll/epoll.
     int fd() const { return m_fd; }
@@ -72,7 +144,16 @@ public:
 private:
     int m_fd = -1;
 
+    std::array<IClassicFrameListener*, MaxListeners> m_classicListeners{};
+    std::size_t m_classicCount = 0;
+
+    std::array<IFdFrameListener*, MaxListeners> m_fdListeners{};
+    std::size_t m_fdCount = 0;
+
     void closeIfOpen() noexcept;
+
+    // Wait until the socket has data to read. Returns false on timeout.
+    bool waitReadable(int timeoutMs);
 };
 
 } // namespace SocketCAN

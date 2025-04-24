@@ -103,3 +103,91 @@ TEST(CanbusUnit, ReceiveWithZeroTimeoutReturnsFalse)
 
     EXPECT_FALSE(result) << "receive(0ms) should return false when no data is available";
 }
+
+// ---------------------------------------------------------------------------
+// CAN FD send validation
+// ---------------------------------------------------------------------------
+
+TEST(CanbusUnit, FdSendThrowsOnLenExceeds64)
+{
+    Canbus bus{"vcan0"};
+
+    FdFrame f;
+    f.id  = 0x100;
+    f.len = 65;  // INVALID: max is 64
+
+    EXPECT_THROW(bus.send(f), CanError);
+}
+
+TEST(CanbusUnit, FdSendThrowsOnStandardIdOutOfRange)
+{
+    Canbus bus{"vcan0"};
+
+    FdFrame f;
+    f.id       = 0x1800;  // beyond 11-bit
+    f.len      = 1;
+    f.extended = false;
+
+    EXPECT_THROW(bus.send(f), CanError);
+}
+
+TEST(CanbusUnit, FdSendThrowsOnExtendedIdOutOfRange)
+{
+    Canbus bus{"vcan0"};
+
+    FdFrame f;
+    f.id       = 0x3FFFFFFF;  // beyond 29-bit
+    f.len      = 1;
+    f.extended = true;
+
+    EXPECT_THROW(bus.send(f), CanError);
+}
+
+// ---------------------------------------------------------------------------
+// Listener registration overflow
+// ---------------------------------------------------------------------------
+
+namespace
+{
+    // Minimal no-op listener implementations for registration tests
+    struct NoopClassicListener : IClassicFrameListener
+    {
+        void onClassicFrame(const Frame&) override {}
+    };
+
+    struct NoopFdListener : IFdFrameListener
+    {
+        void onFdFrame(const FdFrame&) override {}
+    };
+}
+
+TEST(CanbusUnit, AddClassicListenerThrowsWhenFull)
+{
+    Canbus bus{"vcan0"};
+    NoopClassicListener listeners[Canbus::MaxListeners + 1];
+
+    for (std::size_t i = 0; i < Canbus::MaxListeners; ++i)
+        ASSERT_NO_THROW(bus.addClassicListener(&listeners[i]));
+
+    EXPECT_THROW(bus.addClassicListener(&listeners[Canbus::MaxListeners]), CanError);
+}
+
+TEST(CanbusUnit, AddFdListenerThrowsWhenFull)
+{
+    Canbus bus{"vcan0"};
+    NoopFdListener listeners[Canbus::MaxListeners + 1];
+
+    for (std::size_t i = 0; i < Canbus::MaxListeners; ++i)
+        ASSERT_NO_THROW(bus.addFdListener(&listeners[i]));
+
+    EXPECT_THROW(bus.addFdListener(&listeners[Canbus::MaxListeners]), CanError);
+}
+
+TEST(CanbusUnit, ListenerReceiveWithZeroTimeoutReturnsFalse)
+{
+    Canbus reader{"vcan0"};
+
+    // No listeners registered — dispatch-receive should still honour timeout
+    bool result = reader.receive(std::chrono::milliseconds{0});
+    EXPECT_FALSE(result);
+}

@@ -247,3 +247,179 @@ TEST(CanbusIntegration, CanFilterBlocksOtherIds)
     ASSERT_EQ(n, sizeof(cf));
     EXPECT_EQ(cf.can_id & CAN_SFF_MASK, 0x555u);
 }
+
+// ---------------------------------------------------------------------------
+// CAN FD integration tests
+// ---------------------------------------------------------------------------
+
+TEST(CanbusIntegration, FdSendAndReceiveFullPayload)
+{
+    Canbus writer{"vcan0"};
+    Canbus reader{"vcan0"};
+
+    FdFrame tx;
+    tx.id  = 0x456;
+    tx.len = 64;
+    tx.brs = true;
+    for (uint8_t i = 0; i < 64; ++i)
+        tx.data[i] = i;
+
+    writer.send(tx);
+
+    FdFrame rx;
+    // Use listener-based receive to capture the FD frame
+    bool got = false;
+
+    struct Sink : IFdFrameListener
+    {
+        FdFrame& out;
+        bool&    flag;
+        Sink(FdFrame& o, bool& f) : out(o), flag(f) {}
+        void onFdFrame(const FdFrame& frame) override
+        {
+            out  = frame;
+            flag = true;
+        }
+    } sink{rx, got};
+
+    reader.addFdListener(&sink);
+    ASSERT_TRUE(reader.receive(std::chrono::milliseconds{100}))
+        << "Timed out waiting for CAN FD frame on vcan0";
+
+    ASSERT_TRUE(got) << "FD listener was not called";
+    EXPECT_EQ(rx.id, tx.id);
+    EXPECT_EQ(rx.len, tx.len);
+    EXPECT_TRUE(rx.brs);
+    for (uint8_t i = 0; i < 64; ++i)
+        EXPECT_EQ(rx.data[i], tx.data[i]);
+}
+
+TEST(CanbusIntegration, FdSendAndReceiveExtendedId)
+{
+    Canbus writer{"vcan0"};
+    Canbus reader{"vcan0"};
+
+    FdFrame tx;
+    tx.id       = 0x1ABCDE;
+    tx.extended = true;
+    tx.len      = 8;
+    tx.data[0]  = 0xCA;
+    tx.data[1]  = 0xFE;
+
+    writer.send(tx);
+
+    FdFrame rx;
+    bool got = false;
+
+    struct Sink : IFdFrameListener
+    {
+        FdFrame& out;
+        bool&    flag;
+        Sink(FdFrame& o, bool& f) : out(o), flag(f) {}
+        void onFdFrame(const FdFrame& frame) override { out = frame; flag = true; }
+    } sink{rx, got};
+
+    reader.addFdListener(&sink);
+    ASSERT_TRUE(reader.receive(100ms));
+    ASSERT_TRUE(got);
+    EXPECT_TRUE(rx.extended);
+    EXPECT_EQ(rx.id, tx.id);
+    EXPECT_EQ(rx.data[0], 0xCAu);
+    EXPECT_EQ(rx.data[1], 0xFEu);
+}
+
+TEST(CanbusIntegration, MixedClassicAndFdDispatchToSeparateListeners)
+{
+    Canbus writer{"vcan0"};
+    Canbus reader{"vcan0"};
+
+    // ---- listeners ----
+    Frame   rxClassic;
+    FdFrame rxFd;
+    bool    gotClassic = false;
+    bool    gotFd      = false;
+
+    struct ClassicSink : IClassicFrameListener
+    {
+        Frame& out;
+        bool&  flag;
+        ClassicSink(Frame& o, bool& f) : out(o), flag(f) {}
+        void onClassicFrame(const Frame& frame) override { out = frame; flag = true; }
+    } classicSink{rxClassic, gotClassic};
+
+    struct FdSink : IFdFrameListener
+    {
+        FdFrame& out;
+        bool&    flag;
+        FdSink(FdFrame& o, bool& f) : out(o), flag(f) {}
+        void onFdFrame(const FdFrame& frame) override { out = frame; flag = true; }
+    } fdSink{rxFd, gotFd};
+
+    reader.addClassicListener(&classicSink);
+    reader.addFdListener(&fdSink);
+
+    // ---- send classic ----
+    Frame classic;
+    classic.id    = 0x111;
+    classic.dlc   = 2;
+    classic.data[0] = 0xAA;
+    classic.data[1] = 0xBB;
+    writer.send(classic);
+
+    ASSERT_TRUE(reader.receive(20ms));
+    EXPECT_TRUE(gotClassic)  << "Classic listener should have fired";
+    EXPECT_FALSE(gotFd)      << "FD listener must not fire on a classic frame";
+    EXPECT_EQ(rxClassic.id, classic.id);
+    EXPECT_EQ(rxClassic.data[0], 0xAAu);
+
+    gotClassic = false;  // reset for second frame
+
+    // ---- send FD ----
+    FdFrame fd;
+    fd.id    = 0x222;
+    fd.len   = 16;
+    fd.brs   = true;
+    for (uint8_t i = 0; i < 16; ++i)
+        fd.data[i] = static_cast<uint8_t>(0x10 + i);
+    writer.send(fd);
+
+    ASSERT_TRUE(reader.receive(20ms));
+    EXPECT_TRUE(gotFd)        << "FD listener should have fired";
+    EXPECT_FALSE(gotClassic)  << "Classic listener must not fire on an FD frame";
+    EXPECT_EQ(rxFd.id, fd.id);
+    EXPECT_EQ(rxFd.len, fd.len);
+    EXPECT_TRUE(rxFd.brs);
+    for (uint8_t i = 0; i < 16; ++i)
+        EXPECT_EQ(rxFd.data[i], static_cast<uint8_t>(0x10 + i));
+}
+
+TEST(CanbusIntegration, MultipleClassicListenersAllReceive)
+{
+    Canbus writer{"vcan0"};
+    Canbus reader{"vcan0"};
+
+    int callCount = 0;
+
+    struct CountingSink : IClassicFrameListener
+    {
+        int& count;
+        explicit CountingSink(int& c) : count(c) {}
+        void onClassicFrame(const Frame&) override { ++count; }
+    };
+
+    CountingSink s1{callCount};
+    CountingSink s2{callCount};
+    CountingSink s3{callCount};
+
+    reader.addClassicListener(&s1);
+    reader.addClassicListener(&s2);
+    reader.addClassicListener(&s3);
+
+    Frame tx;
+    tx.id  = 0x400;
+    tx.dlc = 1;
+    writer.send(tx);
+
+    ASSERT_TRUE(reader.receive(20ms));
+    EXPECT_EQ(callCount, 3) << "All three Classic listeners must be called";
+}
