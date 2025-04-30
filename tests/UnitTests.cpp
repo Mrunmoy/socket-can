@@ -24,7 +24,7 @@ TEST(SocketCan, FdFrameDefaultConstruction) {
 
 TEST(SocketCan, FdFrameMaxDataSize) {
     // Compile-time check: FD payload must hold 64 bytes
-    SocketCAN::FdFrame f;
-    static_assert(f.data.size() == 64, "FdFrame data must be 64 bytes");
-    EXPECT_EQ(f.data.size(), 64u);
+    static_assert(std::tuple_size<decltype(SocketCAN::FdFrame::data)>::value == 64,
+                  "FdFrame data must be 64 bytes");
+    EXPECT_EQ(SocketCAN::FdFrame{}.data.size(), 64u);
 }

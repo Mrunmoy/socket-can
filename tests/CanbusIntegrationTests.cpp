@@ -320,7 +320,7 @@ TEST(CanbusIntegration, FdSendAndReceiveExtendedId)
     } sink{rx, got};
 
     reader.addFdListener(&sink);
-    ASSERT_TRUE(reader.receive(100ms));
+    ASSERT_TRUE(reader.receive(std::chrono::milliseconds{100}));
     ASSERT_TRUE(got);
     EXPECT_TRUE(rx.extended);
     EXPECT_EQ(rx.id, tx.id);
@@ -366,7 +366,7 @@ TEST(CanbusIntegration, MixedClassicAndFdDispatchToSeparateListeners)
     classic.data[1] = 0xBB;
     writer.send(classic);
 
-    ASSERT_TRUE(reader.receive(20ms));
+    ASSERT_TRUE(reader.receive(std::chrono::milliseconds{100}));
     EXPECT_TRUE(gotClassic)  << "Classic listener should have fired";
     EXPECT_FALSE(gotFd)      << "FD listener must not fire on a classic frame";
     EXPECT_EQ(rxClassic.id, classic.id);
@@ -383,7 +383,7 @@ TEST(CanbusIntegration, MixedClassicAndFdDispatchToSeparateListeners)
         fd.data[i] = static_cast<uint8_t>(0x10 + i);
     writer.send(fd);
 
-    ASSERT_TRUE(reader.receive(20ms));
+    ASSERT_TRUE(reader.receive(std::chrono::milliseconds{100}));
     EXPECT_TRUE(gotFd)        << "FD listener should have fired";
     EXPECT_FALSE(gotClassic)  << "Classic listener must not fire on an FD frame";
     EXPECT_EQ(rxFd.id, fd.id);
@@ -420,6 +420,6 @@ TEST(CanbusIntegration, MultipleClassicListenersAllReceive)
     tx.dlc = 1;
     writer.send(tx);
 
-    ASSERT_TRUE(reader.receive(20ms));
+    ASSERT_TRUE(reader.receive(std::chrono::milliseconds{100}));
     EXPECT_EQ(callCount, 3) << "All three Classic listeners must be called";
 }

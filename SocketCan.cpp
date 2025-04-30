@@ -19,7 +19,9 @@ Canbus::Canbus(const std::string& ifname,
     // Create socket: PF_CAN, raw CAN frames
     m_fd = ::socket(PF_CAN, SOCK_RAW, CAN_RAW);
     if (m_fd < 0)
+    {
         throwErrno("socket(PF_CAN, SOCK_RAW, CAN_RAW)");
+    }
 
     // Enable CAN FD frames so the socket accepts both Classic and FD frames
     int enableFd = 1;
