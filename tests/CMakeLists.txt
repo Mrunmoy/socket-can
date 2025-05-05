@@ -8,20 +8,36 @@ set(TEST_SOURCES
 # Locate GTest — prefer the CMake package, fall back to manual paths
 find_package(GTest QUIET)
 
-if(NOT GTest_FOUND)
-    # libgtest-dev installs static archives but no CMake config on some distros;
-    # build a minimal imported target manually.
+if(TARGET GTest::gtest AND NOT TARGET GTest::GTest)
+    add_library(GTest::GTest ALIAS GTest::gtest)
+endif()
+if(TARGET GTest::gtest_main AND NOT TARGET GTest::Main)
+    add_library(GTest::Main ALIAS GTest::gtest_main)
+endif()
+
+if(NOT TARGET GTest::GTest OR NOT TARGET GTest::Main)
+    # libgtest-dev installs static archives but no CMake config on some distros.
+    find_path(GTEST_INCLUDE_DIR gtest/gtest.h)
+    find_library(GTEST_LIBRARY NAMES gtest)
+    find_library(GTEST_MAIN_LIBRARY NAMES gtest_main)
+
+    if(NOT GTEST_INCLUDE_DIR OR NOT GTEST_LIBRARY OR NOT GTEST_MAIN_LIBRARY)
+        message(FATAL_ERROR "GTest not found. Install GoogleTest development package.")
+    endif()
+
     add_library(GTest::GTest STATIC IMPORTED)
     set_target_properties(GTest::GTest PROPERTIES
-        IMPORTED_LOCATION /usr/lib/x86_64-linux-gnu/libgtest.a
-        INTERFACE_INCLUDE_DIRECTORIES /usr/include
+        IMPORTED_LOCATION "${GTEST_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${GTEST_INCLUDE_DIR}"
     )
     add_library(GTest::Main STATIC IMPORTED)
     set_target_properties(GTest::Main PROPERTIES
-        IMPORTED_LOCATION /usr/lib/x86_64-linux-gnu/libgtest_main.a
-        INTERFACE_INCLUDE_DIRECTORIES /usr/include
+        IMPORTED_LOCATION "${GTEST_MAIN_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${GTEST_INCLUDE_DIR}"
     )
 endif()
+
+find_package(Threads REQUIRED)
 
 # Build test executable
 add_executable(socketcan_tests
@@ -30,7 +46,7 @@ add_executable(socketcan_tests
 
 # Link against the main library + GTest
 # Use static library for test isolation
-target_link_libraries(socketcan_tests PRIVATE socketcan_static GTest::GTest GTest::Main pthread)
+target_link_libraries(socketcan_tests PRIVATE socketcan_static GTest::GTest GTest::Main Threads::Threads)
 
 # --------------------------------------------------------------
 # Register main test with CTest

@@ -1,5 +1,6 @@
 #include "SocketCan.hpp"
 
+#include <cerrno>
 #include <cstring>
 #include <fcntl.h>
 
@@ -28,8 +29,12 @@ Canbus::Canbus(const std::string& ifname,
     if (::setsockopt(m_fd, SOL_CAN_RAW, CAN_RAW_FD_FRAMES,
                      &enableFd, sizeof(enableFd)) < 0)
     {
-        closeIfOpen();
-        throwErrno("setsockopt(CAN_RAW_FD_FRAMES)");
+        const int err = errno;
+        if (err != ENOPROTOOPT && err != EOPNOTSUPP && err != EINVAL)
+        {
+            closeIfOpen();
+            throwErrno("setsockopt(CAN_RAW_FD_FRAMES)");
+        }
     }
 
     // Optional: disable local loopback
@@ -360,6 +365,8 @@ bool Canbus::receive(std::chrono::milliseconds timeout)
 // ---------------------------------------------------------------------------
 void Canbus::addClassicListener(IClassicFrameListener* listener)
 {
+    if (listener == nullptr)
+        throw CanError("Classic CAN listener cannot be null");
     if (m_classicCount >= MaxListeners)
         throw CanError("Maximum number of Classic CAN listeners reached");
     m_classicListeners[m_classicCount++] = listener;
@@ -367,6 +374,8 @@ void Canbus::addClassicListener(IClassicFrameListener* listener)
 
 void Canbus::addFdListener(IFdFrameListener* listener)
 {
+    if (listener == nullptr)
+        throw CanError("CAN FD listener cannot be null");
     if (m_fdCount >= MaxListeners)
         throw CanError("Maximum number of CAN FD listeners reached");
     m_fdListeners[m_fdCount++] = listener;

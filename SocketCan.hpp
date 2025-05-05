@@ -124,7 +124,7 @@ public:
     // -----------------------------------------------------------------------
 
     // Read one frame and dispatch it to all registered listeners of the
-    // matching type. Returns true if a frame was dispatched, false on timeout.
+    // matching type. Returns true if a frame was read, false on timeout.
     bool receive(std::chrono::milliseconds timeout =
                      std::chrono::milliseconds{-1}); // -1 => block forever
 
