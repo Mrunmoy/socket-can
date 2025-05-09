@@ -7,7 +7,7 @@ This library provides:
 
 - A RAII-safe `SocketCAN::Canbus` class
 - Strongly-typed `SocketCAN::Frame` (Classic CAN) and `SocketCAN::FdFrame` (CAN FD) structures
-- Support for both **Classic CAN** (up to 8 bytes) and **CAN FD** (up to 64 bytes) on a single socket
+- Support for both **Classic CAN** (up to 8 bytes) and **CAN FD** (up to 64 bytes) — CAN FD is opt-in per socket
 - Separate listener interfaces (`IClassicFrameListener`, `IFdFrameListener`) — register as many as you need; each frame type dispatches only to matching listeners
 - Blocking and non-blocking receive (with timeout support)
 - Support for
@@ -21,7 +21,7 @@ This library provides:
 - Clean error handling via `SocketCAN::CanError`
 - Full unit + integration test suite
 - VCAN0 virtual CAN interface fixture for integration tests
-- Complete Nix flake support (dev shell + builds)
+- Docker dev container with the full toolchain + vcan tooling
 
 ## Features
 
@@ -34,17 +34,22 @@ Sockets are opened in the constructor and safely closed in the destructor.
 ### Exceptions on errors
 All system errors produce a `SocketCAN::CanError`.
 
-### CAN FD + Classic CAN on one socket
-A single `Canbus` instance enables `CAN_RAW_FD_FRAMES` automatically. You can send and receive both frame types through it without any extra configuration.
+### Selectable CAN FD + Classic CAN
+CAN FD is a per-socket mode controlled by the `enableFd` constructor argument
+(default `true`). When enabled, a single `Canbus` instance sends and receives
+both Classic and CAN FD frames over `CAN_RAW_FD_FRAMES`. Construct with
+`enableFd = false` for a classic-only socket (the kernel default); in that mode
+CAN FD frames are not delivered and `send(const FdFrame&)` throws. If the
+interface/kernel cannot support CAN FD, the socket falls back to classic-only
+and `fdEnabled()` reports `false`.
+
+```cpp
+Canbus fdBus{"can0"};                          // FD enabled (default)
+Canbus classicBus{"can0", true, true, false};  // classic-only
+```
 
 ### Integration tests using VCAN
 Tests automatically create `vcan0` using a test fixture.
-
-### Nix-native build & test workflow
-- `nix develop` gives a full C++ devshell
-- `nix build` builds the library
-- `nix build .#tests` builds test binary at `result/socketcan_tests`
-   make sure to run the tests/setup_vcan.sh first to create the interface
 
 ## Include the library
 
@@ -149,25 +154,41 @@ int main() {
 Up to `Canbus::MaxListeners` (8) listeners of each type can be registered.
 All registered listeners of a given type are notified for every matching frame.
 
-## Developer Environment (Nix Flake)
-Provides GCC, CMake, GTest, pkg-config, Linux headers.
+## Developer Environment (Docker Dev Container)
+
+The repository ships a `.devcontainer/` with the full toolchain (GCC, CMake,
+GoogleTest, pkg-config) plus `iproute2`/`kmod`/`can-utils` for the virtual CAN
+interface.
+
+### VS Code
+
+Open the folder and choose **Reopen in Container**. The container is granted
+`NET_ADMIN` + `SYS_MODULE` and mounts `/lib/modules` read-only so it can bring
+up `vcan0`; `tests/setup_vcan.sh` runs automatically on create.
+
+> The host kernel must provide the `vcan` module (standard on Ubuntu). The
+> container shares the host kernel, so `modprobe vcan` loads it there.
+
+### Plain Docker (CI-style)
 
 ```bash
-nix develop
-./tests/setup_vcan.sh
+docker build -f .devcontainer/Dockerfile -t socketcan-dev .devcontainer
+
+docker run --rm \
+    --cap-add=NET_ADMIN --cap-add=SYS_MODULE \
+    -v /lib/modules:/lib/modules:ro \
+    -v "$PWD":/workspace -w /workspace \
+    socketcan-dev \
+    bash -c 'tests/setup_vcan.sh && \
+             cmake -S . -B build -DBUILD_TESTING=ON && \
+             cmake --build build -j && \
+             (cd build && ctest --output-on-failure)'
 ```
 
-## Building and Running Tests with Nix
+## Building and Running Tests with CMake
 
 ```bash
-nix build
-nix build .#tests
-./result/socketcan_tests
-```
-
-## Building and Running Tests  with CMake
-
-```bash
+./tests/setup_vcan.sh        # create vcan0 (uses sudo on a dev host)
 mkdir build
 cd build
 cmake .. -DBUILD_TESTING=ON
@@ -179,8 +200,10 @@ ctest --output-on-failure
 
 ```
 .
+├── .devcontainer/
+│   ├── Dockerfile
+│   └── devcontainer.json
 ├── CMakeLists.txt
-├── flake.nix
 ├── SocketCan.hpp
 ├── SocketCan.cpp
 └── tests/

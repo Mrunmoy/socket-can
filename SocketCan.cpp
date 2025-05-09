@@ -15,7 +15,8 @@ namespace SocketCAN
 
 Canbus::Canbus(const std::string& ifname,
                bool loopback,
-               bool blocking)
+               bool blocking,
+               bool enableFd)
 {
     // Create socket: PF_CAN, raw CAN frames
     m_fd = ::socket(PF_CAN, SOCK_RAW, CAN_RAW);
@@ -24,16 +25,26 @@ Canbus::Canbus(const std::string& ifname,
         throwErrno("socket(PF_CAN, SOCK_RAW, CAN_RAW)");
     }
 
-    // Enable CAN FD frames so the socket accepts both Classic and FD frames
-    int enableFd = 1;
-    if (::setsockopt(m_fd, SOL_CAN_RAW, CAN_RAW_FD_FRAMES,
-                     &enableFd, sizeof(enableFd)) < 0)
+    // Optionally enable CAN FD frames so the socket accepts both Classic and FD
+    // frames. CAN_RAW_FD_FRAMES is off by default in the kernel; when requested
+    // but unsupported by the interface/kernel, fall back to classic-only.
+    if (enableFd)
     {
-        const int err = errno;
-        if (err != ENOPROTOOPT && err != EOPNOTSUPP && err != EINVAL)
+        int fdOn = 1;
+        if (::setsockopt(m_fd, SOL_CAN_RAW, CAN_RAW_FD_FRAMES,
+                         &fdOn, sizeof(fdOn)) == 0)
         {
-            closeIfOpen();
-            throwErrno("setsockopt(CAN_RAW_FD_FRAMES)");
+            m_fdEnabled = true;
+        }
+        else
+        {
+            const int err = errno;
+            if (err != ENOPROTOOPT && err != EOPNOTSUPP && err != EINVAL)
+            {
+                closeIfOpen();
+                throwErrno("setsockopt(CAN_RAW_FD_FRAMES)");
+            }
+            // Otherwise: interface/kernel lacks CAN FD support — stay classic-only.
         }
     }
 
@@ -96,10 +107,12 @@ Canbus::Canbus(Canbus&& other) noexcept
 {
     m_fd              = other.m_fd;
     other.m_fd        = -1;
+    m_fdEnabled       = other.m_fdEnabled;
     m_classicListeners = other.m_classicListeners;
     m_classicCount     = other.m_classicCount;
     m_fdListeners      = other.m_fdListeners;
     m_fdCount          = other.m_fdCount;
+    other.m_fdEnabled    = false;
     other.m_classicCount = 0;
     other.m_fdCount      = 0;
 }
@@ -111,10 +124,12 @@ Canbus& Canbus::operator=(Canbus&& other) noexcept
         closeIfOpen();
         m_fd               = other.m_fd;
         other.m_fd         = -1;
+        m_fdEnabled        = other.m_fdEnabled;
         m_classicListeners = other.m_classicListeners;
         m_classicCount     = other.m_classicCount;
         m_fdListeners      = other.m_fdListeners;
         m_fdCount          = other.m_fdCount;
+        other.m_fdEnabled    = false;
         other.m_classicCount = 0;
         other.m_fdCount      = 0;
     }
@@ -211,6 +226,9 @@ void Canbus::send(const FdFrame& frame)
 {
     if (m_fd < 0)
         throw CanError("send() on closed Canbus");
+
+    if (!m_fdEnabled)
+        throw CanError("CAN FD not enabled on this socket (construct with enableFd=true on an FD-capable interface)");
 
     if (frame.len > CANFD_MAX_DLEN)
         throw CanError("CAN FD frame len exceeds CANFD_MAX_DLEN (64)");

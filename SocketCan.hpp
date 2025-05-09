@@ -83,11 +83,18 @@ public:
     static constexpr std::size_t MaxListeners = 8;
 
     // Open and bind to a CAN interface (e.g. "vcan0", "can0").
-    // CAN FD frames are enabled on the socket automatically.
     // loopback=false if you don't want to see your own frames.
+    // enableFd selects the socket mode:
+    //   true  => CAN_RAW_FD_FRAMES is enabled; the socket sends/receives both
+    //            Classic and CAN FD frames (matching the PR's mixed-traffic API).
+    //   false => classic-only socket (the kernel default); CAN FD frames on the
+    //            bus are not delivered and send(const FdFrame&) throws.
+    // If enableFd is true but the interface/kernel cannot support CAN FD, the
+    // socket falls back to classic-only and fdEnabled() reports false.
     explicit Canbus(const std::string& ifname,
                     bool loopback = true,
-                    bool blocking = true);
+                    bool blocking = true,
+                    bool enableFd = true);
 
     ~Canbus();
 
@@ -141,8 +148,12 @@ public:
     // Get underlying file descriptor if you want to use your own poll/epoll.
     int fd() const { return m_fd; }
 
+    // True if CAN FD mode is active on this socket (requested and supported).
+    bool fdEnabled() const { return m_fdEnabled; }
+
 private:
-    int m_fd = -1;
+    int  m_fd        = -1;
+    bool m_fdEnabled = false;
 
     std::array<IClassicFrameListener*, MaxListeners> m_classicListeners{};
     std::size_t m_classicCount = 0;

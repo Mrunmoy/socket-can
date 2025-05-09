@@ -191,3 +191,31 @@ TEST(CanbusUnit, ListenerReceiveWithZeroTimeoutReturnsFalse)
     bool result = reader.receive(std::chrono::milliseconds{0});
     EXPECT_FALSE(result);
 }
+
+// ---------------------------------------------------------------------------
+// Selectable CAN FD mode
+// ---------------------------------------------------------------------------
+
+TEST(CanbusUnit, FdEnabledByDefaultOnFdCapableInterface)
+{
+    Canbus bus{"vcan0"};
+    EXPECT_TRUE(bus.fdEnabled()) << "vcan0 is FD-capable; default constructor enables FD";
+}
+
+TEST(CanbusUnit, ClassicOnlySocketReportsFdDisabled)
+{
+    Canbus bus{"vcan0", true, true, /*enableFd=*/false};
+    EXPECT_FALSE(bus.fdEnabled());
+}
+
+TEST(CanbusUnit, ClassicOnlySocketRejectsFdSend)
+{
+    Canbus bus{"vcan0", true, true, /*enableFd=*/false};
+
+    FdFrame f;
+    f.id  = 0x100;
+    f.len = 8;
+
+    EXPECT_THROW(bus.send(f), CanError)
+        << "send(FdFrame) must throw on a classic-only socket";
+}

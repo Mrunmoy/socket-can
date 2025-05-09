@@ -3,9 +3,6 @@
 /build-*/
 /cmake-build-*/
 
-# Nix build symlink
-/result
-
 # Common CMake artefacts
 CMakeCache.txt
 CMakeFiles/
