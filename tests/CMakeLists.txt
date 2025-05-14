@@ -44,9 +44,8 @@ add_executable(socketcan_tests
     ${TEST_SOURCES}
 )
 
-# Link against the main library + GTest
-# Use static library for test isolation
-target_link_libraries(socketcan_tests PRIVATE socketcan_static GTest::GTest GTest::Main Threads::Threads)
+# Link against the (header-only) library + GTest
+target_link_libraries(socketcan_tests PRIVATE socketcan GTest::GTest GTest::Main Threads::Threads)
 
 # --------------------------------------------------------------
 # Register main test with CTest

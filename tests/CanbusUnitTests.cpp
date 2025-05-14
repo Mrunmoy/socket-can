@@ -193,29 +193,47 @@ TEST(CanbusUnit, ListenerReceiveWithZeroTimeoutReturnsFalse)
 }
 
 // ---------------------------------------------------------------------------
-// Selectable CAN FD mode
+// Compile-time CAN FD mode (Canbus vs ClassicCanbus)
 // ---------------------------------------------------------------------------
+
+// Detection idiom: does T accept send(const FdFrame&) / addFdListener(...)?
+template <typename, typename = void>
+struct HasFdSend : std::false_type {};
+template <typename T>
+struct HasFdSend<T, std::void_t<decltype(std::declval<T&>().send(std::declval<const SocketCAN::FdFrame&>()))>>
+    : std::true_type {};
+
+template <typename, typename = void>
+struct HasFdListener : std::false_type {};
+template <typename T>
+struct HasFdListener<T, std::void_t<decltype(std::declval<T&>().addFdListener(std::declval<SocketCAN::IFdFrameListener*>()))>>
+    : std::true_type {};
+
+TEST(CanbusUnit, FdMembersAreCompileTimeGatedByType)
+{
+    // The FD socket type exposes the FD API; the classic type does not.
+    static_assert(HasFdSend<SocketCAN::Canbus>::value,
+                  "Canbus (FD) must accept send(FdFrame)");
+    static_assert(!HasFdSend<SocketCAN::ClassicCanbus>::value,
+                  "ClassicCanbus must reject send(FdFrame) at compile time");
+    static_assert(HasFdListener<SocketCAN::Canbus>::value,
+                  "Canbus (FD) must expose addFdListener");
+    static_assert(!HasFdListener<SocketCAN::ClassicCanbus>::value,
+                  "ClassicCanbus must not expose addFdListener");
+
+    static_assert(Canbus::kFdMode, "Canbus::kFdMode must be true");
+    static_assert(!ClassicCanbus::kFdMode, "ClassicCanbus::kFdMode must be false");
+    SUCCEED();
+}
 
 TEST(CanbusUnit, FdEnabledByDefaultOnFdCapableInterface)
 {
     Canbus bus{"vcan0"};
-    EXPECT_TRUE(bus.fdEnabled()) << "vcan0 is FD-capable; default constructor enables FD";
+    EXPECT_TRUE(bus.fdEnabled()) << "vcan0 is FD-capable; the FD socket type enables FD";
 }
 
 TEST(CanbusUnit, ClassicOnlySocketReportsFdDisabled)
 {
-    Canbus bus{"vcan0", true, true, /*enableFd=*/false};
+    ClassicCanbus bus{"vcan0"};
     EXPECT_FALSE(bus.fdEnabled());
-}
-
-TEST(CanbusUnit, ClassicOnlySocketRejectsFdSend)
-{
-    Canbus bus{"vcan0", true, true, /*enableFd=*/false};
-
-    FdFrame f;
-    f.id  = 0x100;
-    f.len = 8;
-
-    EXPECT_THROW(bus.send(f), CanError)
-        << "send(FdFrame) must throw on a classic-only socket";
 }

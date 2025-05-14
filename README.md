@@ -7,7 +7,7 @@ This library provides:
 
 - A RAII-safe `SocketCAN::Canbus` class
 - Strongly-typed `SocketCAN::Frame` (Classic CAN) and `SocketCAN::FdFrame` (CAN FD) structures
-- Support for both **Classic CAN** (up to 8 bytes) and **CAN FD** (up to 64 bytes) — CAN FD is opt-in per socket
+- Support for both **Classic CAN** (up to 8 bytes) and **CAN FD** (up to 64 bytes) — the mode is a compile-time property of the socket type
 - Separate listener interfaces (`IClassicFrameListener`, `IFdFrameListener`) — register as many as you need; each frame type dispatches only to matching listeners
 - Blocking and non-blocking receive (with timeout support)
 - Support for
@@ -34,19 +34,25 @@ Sockets are opened in the constructor and safely closed in the destructor.
 ### Exceptions on errors
 All system errors produce a `SocketCAN::CanError`.
 
-### Selectable CAN FD + Classic CAN
-CAN FD is a per-socket mode controlled by the `enableFd` constructor argument
-(default `true`). When enabled, a single `Canbus` instance sends and receives
-both Classic and CAN FD frames over `CAN_RAW_FD_FRAMES`. Construct with
-`enableFd = false` for a classic-only socket (the kernel default); in that mode
-CAN FD frames are not delivered and `send(const FdFrame&)` throws. If the
-interface/kernel cannot support CAN FD, the socket falls back to classic-only
-and `fdEnabled()` reports `false`.
+### Compile-time CAN FD vs Classic
+CAN FD is a compile-time property of the socket type, not a runtime flag. The
+class is the template `BasicCanbus<bool EnableFd>`, with two aliases:
 
 ```cpp
-Canbus fdBus{"can0"};                          // FD enabled (default)
-Canbus classicBus{"can0", true, true, false};  // classic-only
+using Canbus        = BasicCanbus<true>;   // Classic + CAN FD (default)
+using ClassicCanbus = BasicCanbus<false>;  // Classic-only (kernel default)
 ```
+
+```cpp
+Canbus        fdBus{"can0"};       // CAN_RAW_FD_FRAMES enabled
+ClassicCanbus classicBus{"can0"};  // classic-only socket
+```
+
+The FD-only API (`send(const FdFrame&)`, `addFdListener`) exists **only** on the
+FD type — calling it on a `ClassicCanbus` is a *compile error*, not a runtime
+one. A `ClassicCanbus` never receives CAN FD frames (the kernel filters them).
+If the interface/kernel cannot support CAN FD, an FD socket falls back to
+classic-only and `fdEnabled()` reports `false`.
 
 ### Integration tests using VCAN
 Tests automatically create `vcan0` using a test fixture.
@@ -204,8 +210,7 @@ ctest --output-on-failure
 │   ├── Dockerfile
 │   └── devcontainer.json
 ├── CMakeLists.txt
-├── SocketCan.hpp
-├── SocketCan.cpp
+├── SocketCan.hpp          # header-only: BasicCanbus<EnableFd> + aliases
 └── tests/
     ├── setup_vcan.sh
     ├── UnitTests.cpp
