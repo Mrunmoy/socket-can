@@ -5,11 +5,11 @@ using namespace SocketCAN;
 
 TEST(CanbusUnit, ConstructorThrowsOnInvalidInterface)
 {
-    // We expect constructing Canbus on a non-existent
+    // We expect constructing CanFD on a non-existent
     // interface to throw a CanError exception.
     EXPECT_THROW(
         {
-            Canbus bus{"does_not_exist0"};
+            CanFD bus{"does_not_exist0"};
         },
         CanError
     );
@@ -17,7 +17,7 @@ TEST(CanbusUnit, ConstructorThrowsOnInvalidInterface)
 
 TEST(CanbusUnit, SendThrowsOnInvalidDlc)
 {
-    Canbus bus{"vcan0"};
+    CanFD bus{"vcan0"};
 
     Frame f;
     f.id  = 0x100;
@@ -28,7 +28,7 @@ TEST(CanbusUnit, SendThrowsOnInvalidDlc)
 
 TEST(CanbusUnit, RtrFrameMustNotContainData)
 {
-    Canbus bus{"vcan0"};
+    CanFD bus{"vcan0"};
 
     Frame f;
     f.id  = 0x200;
@@ -45,7 +45,7 @@ TEST(CanbusUnit, RtrFrameMustNotContainData)
 
 TEST(CanbusUnit, StandardIdOutOfRangeThrows)
 {
-    Canbus bus{"vcan0"};
+    CanFD bus{"vcan0"};
 
     Frame f;
     f.id       = 0x1800;  // beyond 11-bit
@@ -57,7 +57,7 @@ TEST(CanbusUnit, StandardIdOutOfRangeThrows)
 
 TEST(CanbusUnit, ExtendedIdOutOfRangeThrows)
 {
-    Canbus bus{"vcan0"};
+    CanFD bus{"vcan0"};
 
     Frame f;
     f.id       = 0x3FFFFFFF;  // beyond 29-bit range
@@ -69,11 +69,11 @@ TEST(CanbusUnit, ExtendedIdOutOfRangeThrows)
 
 TEST(CanbusUnit, MoveConstructorTransfersFd)
 {
-    Canbus original{"vcan0"};
+    CanFD original{"vcan0"};
     int original_fd = original.fd();
 
     // Move construct
-    Canbus moved{std::move(original)};
+    CanFD moved{std::move(original)};
 
     EXPECT_EQ(original.fd(), -1) << "Original should relinquish fd after move";
     EXPECT_EQ(moved.fd(), original_fd) << "Moved object should take ownership";
@@ -81,10 +81,10 @@ TEST(CanbusUnit, MoveConstructorTransfersFd)
 
 TEST(CanbusUnit, MoveAssignmentTransfersFd)
 {
-    Canbus a{"vcan0"};
+    CanFD a{"vcan0"};
     int fd_a = a.fd();
 
-    Canbus b{"vcan0"};
+    CanFD b{"vcan0"};
     (void)b.fd();  // we don't care what b.fd() is initially
 
     // Move assign
@@ -96,7 +96,7 @@ TEST(CanbusUnit, MoveAssignmentTransfersFd)
 
 TEST(CanbusUnit, ReceiveWithZeroTimeoutReturnsFalse)
 {
-    Canbus reader{"vcan0"};
+    CanFD reader{"vcan0"};
 
     Frame f;
     bool result = reader.receive(f, std::chrono::milliseconds{0});
@@ -110,7 +110,7 @@ TEST(CanbusUnit, ReceiveWithZeroTimeoutReturnsFalse)
 
 TEST(CanbusUnit, FdSendThrowsOnLenExceeds64)
 {
-    Canbus bus{"vcan0"};
+    CanFD bus{"vcan0"};
 
     FdFrame f;
     f.id  = 0x100;
@@ -121,7 +121,7 @@ TEST(CanbusUnit, FdSendThrowsOnLenExceeds64)
 
 TEST(CanbusUnit, FdSendThrowsOnStandardIdOutOfRange)
 {
-    Canbus bus{"vcan0"};
+    CanFD bus{"vcan0"};
 
     FdFrame f;
     f.id       = 0x1800;  // beyond 11-bit
@@ -133,7 +133,7 @@ TEST(CanbusUnit, FdSendThrowsOnStandardIdOutOfRange)
 
 TEST(CanbusUnit, FdSendThrowsOnExtendedIdOutOfRange)
 {
-    Canbus bus{"vcan0"};
+    CanFD bus{"vcan0"};
 
     FdFrame f;
     f.id       = 0x3FFFFFFF;  // beyond 29-bit
@@ -163,29 +163,29 @@ namespace
 
 TEST(CanbusUnit, AddClassicListenerThrowsWhenFull)
 {
-    Canbus bus{"vcan0"};
-    NoopClassicListener listeners[Canbus::MaxListeners + 1];
+    CanFD bus{"vcan0"};
+    NoopClassicListener listeners[CanFD::MaxListeners + 1];
 
-    for (std::size_t i = 0; i < Canbus::MaxListeners; ++i)
+    for (std::size_t i = 0; i < CanFD::MaxListeners; ++i)
         ASSERT_NO_THROW(bus.addClassicListener(&listeners[i]));
 
-    EXPECT_THROW(bus.addClassicListener(&listeners[Canbus::MaxListeners]), CanError);
+    EXPECT_THROW(bus.addClassicListener(&listeners[CanFD::MaxListeners]), CanError);
 }
 
 TEST(CanbusUnit, AddFdListenerThrowsWhenFull)
 {
-    Canbus bus{"vcan0"};
-    NoopFdListener listeners[Canbus::MaxListeners + 1];
+    CanFD bus{"vcan0"};
+    NoopFdListener listeners[CanFD::MaxListeners + 1];
 
-    for (std::size_t i = 0; i < Canbus::MaxListeners; ++i)
+    for (std::size_t i = 0; i < CanFD::MaxListeners; ++i)
         ASSERT_NO_THROW(bus.addFdListener(&listeners[i]));
 
-    EXPECT_THROW(bus.addFdListener(&listeners[Canbus::MaxListeners]), CanError);
+    EXPECT_THROW(bus.addFdListener(&listeners[CanFD::MaxListeners]), CanError);
 }
 
 TEST(CanbusUnit, ListenerReceiveWithZeroTimeoutReturnsFalse)
 {
-    Canbus reader{"vcan0"};
+    CanFD reader{"vcan0"};
 
     // No listeners registered — dispatch-receive should still honour timeout
     bool result = reader.receive(std::chrono::milliseconds{0});
@@ -193,7 +193,7 @@ TEST(CanbusUnit, ListenerReceiveWithZeroTimeoutReturnsFalse)
 }
 
 // ---------------------------------------------------------------------------
-// Compile-time CAN FD mode (Canbus vs ClassicCanbus)
+// Compile-time CAN FD mode (CanFD vs CanClassic)
 // ---------------------------------------------------------------------------
 
 // Detection idiom: does T accept send(const FdFrame&) / addFdListener(...)?
@@ -212,28 +212,28 @@ struct HasFdListener<T, std::void_t<decltype(std::declval<T&>().addFdListener(st
 TEST(CanbusUnit, FdMembersAreCompileTimeGatedByType)
 {
     // The FD socket type exposes the FD API; the classic type does not.
-    static_assert(HasFdSend<SocketCAN::Canbus>::value,
-                  "Canbus (FD) must accept send(FdFrame)");
-    static_assert(!HasFdSend<SocketCAN::ClassicCanbus>::value,
-                  "ClassicCanbus must reject send(FdFrame) at compile time");
-    static_assert(HasFdListener<SocketCAN::Canbus>::value,
-                  "Canbus (FD) must expose addFdListener");
-    static_assert(!HasFdListener<SocketCAN::ClassicCanbus>::value,
-                  "ClassicCanbus must not expose addFdListener");
+    static_assert(HasFdSend<SocketCAN::CanFD>::value,
+                  "CanFD (FD) must accept send(FdFrame)");
+    static_assert(!HasFdSend<SocketCAN::CanClassic>::value,
+                  "CanClassic must reject send(FdFrame) at compile time");
+    static_assert(HasFdListener<SocketCAN::CanFD>::value,
+                  "CanFD (FD) must expose addFdListener");
+    static_assert(!HasFdListener<SocketCAN::CanClassic>::value,
+                  "CanClassic must not expose addFdListener");
 
-    static_assert(Canbus::kFdMode, "Canbus::kFdMode must be true");
-    static_assert(!ClassicCanbus::kFdMode, "ClassicCanbus::kFdMode must be false");
+    static_assert(CanFD::kFdMode, "CanFD::kFdMode must be true");
+    static_assert(!CanClassic::kFdMode, "CanClassic::kFdMode must be false");
     SUCCEED();
 }
 
 TEST(CanbusUnit, FdEnabledByDefaultOnFdCapableInterface)
 {
-    Canbus bus{"vcan0"};
+    CanFD bus{"vcan0"};
     EXPECT_TRUE(bus.fdEnabled()) << "vcan0 is FD-capable; the FD socket type enables FD";
 }
 
 TEST(CanbusUnit, ClassicOnlySocketReportsFdDisabled)
 {
-    ClassicCanbus bus{"vcan0"};
+    CanClassic bus{"vcan0"};
     EXPECT_FALSE(bus.fdEnabled());
 }

@@ -5,7 +5,7 @@ A modern, safe, and test-driven C++17 wrapper for Linux SocketCAN.
 
 This library provides:
 
-- A RAII-safe `SocketCAN::Canbus` class
+- RAII-safe socket types: `SocketCAN::CanFD` (Classic + CAN FD) and `SocketCAN::CanClassic` (classic-only)
 - Strongly-typed `SocketCAN::Frame` (Classic CAN) and `SocketCAN::FdFrame` (CAN FD) structures
 - Support for both **Classic CAN** (up to 8 bytes) and **CAN FD** (up to 64 bytes) — the mode is a compile-time property of the socket type
 - Separate listener interfaces (`IClassicFrameListener`, `IFdFrameListener`) — register as many as you need; each frame type dispatches only to matching listeners
@@ -39,18 +39,18 @@ CAN FD is a compile-time property of the socket type, not a runtime flag. The
 class is the template `BasicCanbus<bool EnableFd>`, with two aliases:
 
 ```cpp
-using Canbus        = BasicCanbus<true>;   // Classic + CAN FD (default)
-using ClassicCanbus = BasicCanbus<false>;  // Classic-only (kernel default)
+using CanClassic = BasicCanbus<false>;  // Classic-only (kernel default)
+using CanFD      = BasicCanbus<true>;   // Classic + CAN FD
 ```
 
 ```cpp
-Canbus        fdBus{"can0"};       // CAN_RAW_FD_FRAMES enabled
-ClassicCanbus classicBus{"can0"};  // classic-only socket
+CanFD      fdBus{"can0"};       // CAN_RAW_FD_FRAMES enabled
+CanClassic classicBus{"can0"};  // classic-only socket
 ```
 
 The FD-only API (`send(const FdFrame&)`, `addFdListener`) exists **only** on the
-FD type — calling it on a `ClassicCanbus` is a *compile error*, not a runtime
-one. A `ClassicCanbus` never receives CAN FD frames (the kernel filters them).
+FD type — calling it on a `CanClassic` is a *compile error*, not a runtime
+one. A `CanClassic` never receives CAN FD frames (the kernel filters them).
 If the interface/kernel cannot support CAN FD, an FD socket falls back to
 classic-only and `fdEnabled()` reports `false`.
 
@@ -73,7 +73,7 @@ using namespace SocketCAN;
 using namespace SocketCAN;
 
 int main() {
-    Canbus bus{"vcan0"};
+    CanClassic bus{"vcan0"};
 
     Frame f{};
     f.id = 0x123;
@@ -101,7 +101,7 @@ int main() {
 using namespace SocketCAN;
 
 int main() {
-    Canbus bus{"vcan0"};
+    CanFD bus{"vcan0"};
 
     FdFrame f{};
     f.id  = 0x456;
@@ -142,7 +142,7 @@ struct MyFdHandler : IFdFrameListener {
 };
 
 int main() {
-    Canbus bus{"vcan0"};
+    CanFD bus{"vcan0"};
 
     MyClassicHandler classicHandler;
     MyFdHandler      fdHandler;
@@ -157,7 +157,7 @@ int main() {
 }
 ```
 
-Up to `Canbus::MaxListeners` (8) listeners of each type can be registered.
+Up to `CanFD::MaxListeners` (8) listeners of each type can be registered.
 All registered listeners of a given type are notified for every matching frame.
 
 ## Developer Environment (Docker Dev Container)

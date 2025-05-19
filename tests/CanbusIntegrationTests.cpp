@@ -14,8 +14,8 @@ using namespace SocketCAN;
 TEST(CanbusIntegration, SendAndReceiveOnVcan0)
 {
     // These will throw SocketCAN::CanError if something is wrong
-    Canbus writer{"vcan0"};
-    Canbus reader{"vcan0"};
+    CanFD writer{"vcan0"};
+    CanFD reader{"vcan0"};
 
     Frame tx;
     tx.id       = 0x123;
@@ -49,8 +49,8 @@ TEST(CanbusIntegration, SendAndReceiveOnVcan0)
 TEST(CanbusIntegration, SendAndReceiveExtendedId)
 {
     // Ensure vcan0 exists
-    Canbus writer{"vcan0"};
-    Canbus reader{"vcan0"};
+    CanFD writer{"vcan0"};
+    CanFD reader{"vcan0"};
 
     Frame tx;
     tx.id       = 0x1ABCDE;     // Large 29-bit ID
@@ -77,8 +77,8 @@ TEST(CanbusIntegration, SendAndReceiveExtendedId)
 TEST(CanbusIntegration, SendAndReceiveZeroDlc)
 {
     // Ensure vcan0 exists (set up by fixture)
-    Canbus writer{"vcan0"};
-    Canbus reader{"vcan0"};
+    CanFD writer{"vcan0"};
+    CanFD reader{"vcan0"};
 
     Frame tx;
     tx.id       = 0x42;
@@ -102,8 +102,8 @@ TEST(CanbusIntegration, SendAndReceiveZeroDlc)
 
 TEST(CanbusIntegration, BurstSendAndReceiveTenFrames)
 {
-    Canbus writer{"vcan0"};
-    Canbus reader{"vcan0"};
+    CanFD writer{"vcan0"};
+    CanFD reader{"vcan0"};
 
     // Send 10 frames with simple incrementing payload
     for (uint32_t i = 0; i < 10; ++i)
@@ -131,8 +131,8 @@ TEST(CanbusIntegration, BurstSendAndReceiveTenFrames)
 
 TEST(CanbusIntegration, NonBlockingReceiveDuringTraffic)
 {
-    Canbus writer{"vcan0"};
-    Canbus reader{"vcan0", true, false}; // blocking = false => fd is non-blocking
+    CanFD writer{"vcan0"};
+    CanFD reader{"vcan0", true, false}; // blocking = false => fd is non-blocking
 
     // First ensure no frame is pending
     {
@@ -173,8 +173,8 @@ TEST(CanbusIntegration, NonBlockingReceiveDuringTraffic)
 
 TEST(CanbusIntegration, RtrFrameSendAndReceive)
 {
-    Canbus writer{"vcan0"};
-    Canbus reader{"vcan0"};
+    CanFD writer{"vcan0"};
+    CanFD reader{"vcan0"};
 
     Frame tx;
     tx.id = 0x300;
@@ -196,10 +196,10 @@ TEST(CanbusIntegration, RtrFrameSendAndReceive)
 
 TEST(CanbusIntegration, CanFilterBlocksOtherIds)
 {
-    Canbus writer{"vcan0"};
+    CanFD writer{"vcan0"};
 
     // Reader A: no filter
-    Canbus readerA{"vcan0"};
+    CanFD readerA{"vcan0"};
 
     // Reader B: apply filter to only see ID 0x555
     int rfd = ::socket(PF_CAN, SOCK_RAW, CAN_RAW);
@@ -254,8 +254,8 @@ TEST(CanbusIntegration, CanFilterBlocksOtherIds)
 
 TEST(CanbusIntegration, FdSendAndReceiveFullPayload)
 {
-    Canbus writer{"vcan0"};
-    Canbus reader{"vcan0"};
+    CanFD writer{"vcan0"};
+    CanFD reader{"vcan0"};
 
     FdFrame tx;
     tx.id  = 0x456;
@@ -296,8 +296,8 @@ TEST(CanbusIntegration, FdSendAndReceiveFullPayload)
 
 TEST(CanbusIntegration, FdSendAndReceiveExtendedId)
 {
-    Canbus writer{"vcan0"};
-    Canbus reader{"vcan0"};
+    CanFD writer{"vcan0"};
+    CanFD reader{"vcan0"};
 
     FdFrame tx;
     tx.id       = 0x1ABCDE;
@@ -330,8 +330,8 @@ TEST(CanbusIntegration, FdSendAndReceiveExtendedId)
 
 TEST(CanbusIntegration, MixedClassicAndFdDispatchToSeparateListeners)
 {
-    Canbus writer{"vcan0"};
-    Canbus reader{"vcan0"};
+    CanFD writer{"vcan0"};
+    CanFD reader{"vcan0"};
 
     // ---- listeners ----
     Frame   rxClassic;
@@ -395,8 +395,8 @@ TEST(CanbusIntegration, MixedClassicAndFdDispatchToSeparateListeners)
 
 TEST(CanbusIntegration, MultipleClassicListenersAllReceive)
 {
-    Canbus writer{"vcan0"};
-    Canbus reader{"vcan0"};
+    CanFD writer{"vcan0"};
+    CanFD reader{"vcan0"};
 
     int callCount = 0;
 

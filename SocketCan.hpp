@@ -95,8 +95,8 @@ public:
 //                      are not delivered, and the FD-only members do not exist —
 //                      calling them is a compile error.
 //
-// Use the Canbus / ClassicCanbus aliases below rather than the template
-// directly in most code.
+// Use the CanFD / CanClassic aliases below rather than the template directly
+// in most code.
 // ---------------------------------------------------------------------------
 template <bool EnableFd = true>
 class BasicCanbus
@@ -297,7 +297,7 @@ public:
     }
 
     // Send a CAN FD frame (blocking). Only exists on the FD socket type;
-    // calling it on a ClassicCanbus is a compile error.
+    // calling it on a CanClassic is a compile error.
     template <bool E = EnableFd, std::enable_if_t<E, int> = 0>
     void send(const FdFrame& frame)
     {
@@ -479,7 +479,7 @@ public:
     }
 
     // Register a CAN FD frame listener (up to MaxListeners). Only exists on the
-    // FD socket type; calling it on a ClassicCanbus is a compile error.
+    // FD socket type; calling it on a CanClassic is a compile error.
     template <bool E = EnableFd, std::enable_if_t<E, int> = 0>
     void addFdListener(IFdFrameListener* listener)
     {
@@ -551,8 +551,7 @@ private:
 // ---------------------------------------------------------------------------
 // Convenience aliases — the mode is part of the type.
 // ---------------------------------------------------------------------------
-using Canbus        = BasicCanbus<true>;   // Classic + CAN FD (default)
-using FdCanbus      = BasicCanbus<true>;
-using ClassicCanbus = BasicCanbus<false>;  // Classic-only
+using CanClassic = BasicCanbus<false>;  // Classic-only
+using CanFD      = BasicCanbus<true>;   // Classic + CAN FD
 
 } // namespace SocketCAN
