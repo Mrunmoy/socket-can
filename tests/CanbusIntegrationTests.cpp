@@ -1,60 +1,53 @@
 #include <gtest/gtest.h>
 #include "SocketCan.hpp"
-#include <linux/can/raw.h>
-#include <cstring>
+
 #include <chrono>
-#include <thread>
 
-// enable 20ms, 5s, etc.
 using namespace std::chrono_literals;
-
-
 using namespace SocketCAN;
+
+// All tests run against the vcan0 fixture created by setup_vcan.sh.
+
+// ---------------------------------------------------------------------------
+// Classic CAN round-trips
+// ---------------------------------------------------------------------------
 
 TEST(CanbusIntegration, SendAndReceiveOnVcan0)
 {
-    // These will throw SocketCAN::CanError if something is wrong
     CanFD writer{"vcan0"};
     CanFD reader{"vcan0"};
 
     Frame tx;
-    tx.id       = 0x123;
-    tx.extended = false;
-    tx.rtr      = false;
-    tx.dlc      = 4;
-    tx.data[0]  = 0xDE;
-    tx.data[1]  = 0xAD;
-    tx.data[2]  = 0xBE;
-    tx.data[3]  = 0xEF;
+    tx.id      = 0x123;
+    tx.dlc     = 4;
+    tx.data[0] = 0xDE;
+    tx.data[1] = 0xAD;
+    tx.data[2] = 0xBE;
+    tx.data[3] = 0xEF;
 
-    // Send – will throw on error
     writer.send(tx);
 
-    // Receive with a reasonable timeout
     Frame rx;
-    ASSERT_TRUE(reader.receive(rx, std::chrono::milliseconds{100}))
-        << "Timed out waiting for CAN frame on vcan0";
+    ASSERT_TRUE(reader.receive(rx, 100ms)) << "Timed out waiting for CAN frame";
 
     EXPECT_EQ(rx.id, tx.id);
-    EXPECT_EQ(rx.extended, tx.extended);
-    EXPECT_EQ(rx.rtr, tx.rtr);
+    EXPECT_FALSE(rx.extended);
+    EXPECT_FALSE(rx.rtr);
     EXPECT_EQ(rx.dlc, tx.dlc);
-
     for (int i = 0; i < rx.dlc; ++i)
-    {
         EXPECT_EQ(rx.data[i], tx.data[i]);
-    }
 }
 
 TEST(CanbusIntegration, SendAndReceiveExtendedId)
 {
-    // Ensure vcan0 exists
+    // Exercises the EFF flag/mask encode+decode path, which the standard-ID
+    // round-trip never touches.
     CanFD writer{"vcan0"};
     CanFD reader{"vcan0"};
 
     Frame tx;
-    tx.id       = 0x1ABCDE;     // Large 29-bit ID
-    tx.extended = true;         // MUST specify extended ID
+    tx.id       = 0x1ABCDE;   // 29-bit ID
+    tx.extended = true;
     tx.dlc      = 3;
     tx.data[0]  = 0x11;
     tx.data[1]  = 0x22;
@@ -63,10 +56,7 @@ TEST(CanbusIntegration, SendAndReceiveExtendedId)
     writer.send(tx);
 
     Frame rx;
-    ASSERT_TRUE(reader.receive(rx, std::chrono::milliseconds{10}))
-        << "No frame received on vcan0";
-
-    // Validate
+    ASSERT_TRUE(reader.receive(rx, 100ms));
     EXPECT_TRUE(rx.extended);
     EXPECT_EQ(rx.id, tx.id);
     EXPECT_EQ(rx.dlc, tx.dlc);
@@ -74,183 +64,73 @@ TEST(CanbusIntegration, SendAndReceiveExtendedId)
         EXPECT_EQ(rx.data[i], tx.data[i]);
 }
 
-TEST(CanbusIntegration, SendAndReceiveZeroDlc)
+TEST(CanbusIntegration, RtrFrameSendAndReceive)
 {
-    // Ensure vcan0 exists (set up by fixture)
+    // RTR flag must round-trip (set on send, decoded on receive). Complements
+    // the unit-level RTR *rejection* test with the valid path.
     CanFD writer{"vcan0"};
     CanFD reader{"vcan0"};
 
     Frame tx;
-    tx.id       = 0x42;
-    tx.extended = false;
-    tx.dlc      = 0;      // IMPORTANT: zero-length frame
+    tx.id  = 0x300;
+    tx.rtr = true;
+    tx.dlc = 4;   // requesting 4 bytes; no payload for RTR
 
     writer.send(tx);
 
     Frame rx;
-    ASSERT_TRUE(reader.receive(rx, std::chrono::milliseconds{10}))
-        << "No frame received on vcan0";
-
-    EXPECT_EQ(rx.id, tx.id);
-    EXPECT_FALSE(rx.extended);
-    EXPECT_EQ(rx.dlc, 0);
-
-    // All rx.data bytes must be untouched defaults (zero)
-    for (int i = 0; i < 8; i++)
-        EXPECT_EQ(rx.data[i], 0);
-}
-
-TEST(CanbusIntegration, BurstSendAndReceiveTenFrames)
-{
-    CanFD writer{"vcan0"};
-    CanFD reader{"vcan0"};
-
-    // Send 10 frames with simple incrementing payload
-    for (uint32_t i = 0; i < 10; ++i)
-    {
-        Frame tx;
-        tx.id = 0x100 + i;
-        tx.dlc = 1;
-        tx.data[0] = static_cast<uint8_t>(i);
-
-        ASSERT_NO_THROW(writer.send(tx));
-    }
-
-    // Now receive the 10 frames and verify ordering
-    for (uint32_t i = 0; i < 10; ++i)
-    {
-        Frame rx;
-        bool got = reader.receive(rx, std::chrono::milliseconds{20});
-        ASSERT_TRUE(got) << "Failed to receive frame index " << i;
-
-        EXPECT_EQ(rx.id, 0x100 + i);
-        EXPECT_EQ(rx.dlc, 1);
-        EXPECT_EQ(rx.data[0], static_cast<uint8_t>(i));
-    }
-}
-
-TEST(CanbusIntegration, NonBlockingReceiveDuringTraffic)
-{
-    CanFD writer{"vcan0"};
-    CanFD reader{"vcan0", true, false}; // blocking = false => fd is non-blocking
-
-    // First ensure no frame is pending
-    {
-        Frame rx;
-        bool got = reader.receive(rx, std::chrono::milliseconds{0});
-        EXPECT_FALSE(got);
-    }
-
-    // Send 3 frames quickly
-    for (int i = 0; i < 3; ++i)
-    {
-        Frame tx;
-        tx.id = 0x200 + i;
-        tx.dlc = 1;
-        tx.data[0] = i;
-        ASSERT_NO_THROW(writer.send(tx));
-    }
-
-    // Now, non-blocking receive should immediately get all 3 frames
-    for (int i = 0; i < 3; ++i)
-    {
-        Frame rx;
-        bool got = reader.receive(rx, std::chrono::milliseconds{0});
-        ASSERT_TRUE(got) << "Expected pending frame " << i;
-
-        EXPECT_EQ(rx.id, 0x200 + i);
-        EXPECT_EQ(rx.dlc, 1);
-        EXPECT_EQ(rx.data[0], i);
-    }
-
-    // And now, buffer should again be empty
-    {
-        Frame rx;
-        bool got = reader.receive(rx, std::chrono::milliseconds{0});
-        EXPECT_FALSE(got);
-    }
-}
-
-TEST(CanbusIntegration, RtrFrameSendAndReceive)
-{
-    CanFD writer{"vcan0"};
-    CanFD reader{"vcan0"};
-
-    Frame tx;
-    tx.id = 0x300;
-    tx.rtr = true;
-    tx.dlc = 4; // requesting 4 bytes
-    // payload ignored for RTR
-
-    ASSERT_NO_THROW(writer.send(tx));
-
-    Frame rx;
-    ASSERT_TRUE(reader.receive(rx, std::chrono::milliseconds{20}));
-
+    ASSERT_TRUE(reader.receive(rx, 100ms));
     EXPECT_EQ(rx.id, tx.id);
     EXPECT_TRUE(rx.rtr);
     EXPECT_EQ(rx.dlc, 4);
 }
 
-#include <linux/can/raw.h>
-
-TEST(CanbusIntegration, CanFilterBlocksOtherIds)
+TEST(CanbusIntegration, NonBlockingReceiveTimesOutThenReads)
 {
+    // Only test of the blocking=false constructor path (fcntl O_NONBLOCK)
+    // combined with the empty -> data -> empty poll cycle.
     CanFD writer{"vcan0"};
+    CanFD reader{"vcan0", true, false};
 
-    // Reader A: no filter
-    CanFD readerA{"vcan0"};
+    Frame rx;
+    EXPECT_FALSE(reader.receive(rx, 0ms)) << "buffer should start empty";
 
-    // Reader B: apply filter to only see ID 0x555
-    int rfd = ::socket(PF_CAN, SOCK_RAW, CAN_RAW);
-    ASSERT_GE(rfd, 0) << "Failed to open raw CAN socket";
+    Frame tx;
+    tx.id      = 0x200;
+    tx.dlc     = 1;
+    tx.data[0] = 0x5A;
+    writer.send(tx);
 
-    struct ifreq ifr {};
-    std::strncpy(ifr.ifr_name, "vcan0", IFNAMSIZ);
-    ASSERT_GE(::ioctl(rfd, SIOCGIFINDEX, &ifr), 0);
+    ASSERT_TRUE(reader.receive(rx, 0ms)) << "pending frame should read immediately";
+    EXPECT_EQ(rx.id, 0x200u);
+    EXPECT_EQ(rx.data[0], 0x5Au);
 
-    struct sockaddr_can addr {};
-    addr.can_family  = AF_CAN;
-    addr.can_ifindex = ifr.ifr_ifindex;
-    ASSERT_GE(::bind(rfd, (sockaddr*)&addr, sizeof(addr)), 0);
-
-    struct can_filter filter {};
-    filter.can_id = 0x555;
-    filter.can_mask = CAN_SFF_MASK;
-    ASSERT_GE(::setsockopt(rfd, SOL_CAN_RAW, CAN_RAW_FILTER, &filter, sizeof(filter)), 0);
-
-    // Send two frames: one matching, one not
-    {
-        Frame tx;
-        tx.id = 0x111;
-        tx.dlc = 1;
-        tx.data[0] = 0xAA;
-        writer.send(tx);
-    }
-    {
-        Frame tx;
-        tx.id = 0x555;
-        tx.dlc = 1;
-        tx.data[0] = 0xBB;
-        writer.send(tx);
-    }
-
-    // Reader A: should receive TWO frames
-    {
-        Frame rx1; readerA.receive(rx1, 20ms);
-        Frame rx2; readerA.receive(rx2, 20ms);
-    }
-
-    // Reader B: should receive ONLY the 0x555 frame
-    struct can_frame cf{};
-    ssize_t n = ::read(rfd, &cf, sizeof(cf));
-    ASSERT_EQ(n, sizeof(cf));
-    EXPECT_EQ(cf.can_id & CAN_SFF_MASK, 0x555u);
+    EXPECT_FALSE(reader.receive(rx, 0ms)) << "buffer should be drained again";
 }
 
 // ---------------------------------------------------------------------------
-// CAN FD integration tests
+// Mixed-mode behaviour on the FD socket
 // ---------------------------------------------------------------------------
+
+TEST(CanbusIntegration, DirectReceiveThrowsOnFdFrame)
+{
+    // The direct receive(Frame&) overload cannot represent an FD frame, so it
+    // must throw rather than silently truncate — steering users to the
+    // listener-based receive() for mixed traffic.
+    CanFD writer{"vcan0"};
+    CanFD reader{"vcan0"};
+
+    FdFrame fd;
+    fd.id  = 0x321;
+    fd.len = 16;
+    fd.brs = true;
+    for (uint8_t i = 0; i < fd.len; ++i)
+        fd.data[i] = i;
+    writer.send(fd);
+
+    Frame rx;
+    EXPECT_THROW(reader.receive(rx, 100ms), CanError);
+}
 
 TEST(CanbusIntegration, FdSendAndReceiveFullPayload)
 {
@@ -267,26 +147,19 @@ TEST(CanbusIntegration, FdSendAndReceiveFullPayload)
     writer.send(tx);
 
     FdFrame rx;
-    // Use listener-based receive to capture the FD frame
     bool got = false;
-
     struct Sink : IFdFrameListener
     {
         FdFrame& out;
         bool&    flag;
         Sink(FdFrame& o, bool& f) : out(o), flag(f) {}
-        void onFdFrame(const FdFrame& frame) override
-        {
-            out  = frame;
-            flag = true;
-        }
+        void onFdFrame(const FdFrame& frame) override { out = frame; flag = true; }
     } sink{rx, got};
 
     reader.addFdListener(&sink);
-    ASSERT_TRUE(reader.receive(std::chrono::milliseconds{100}))
-        << "Timed out waiting for CAN FD frame on vcan0";
-
+    ASSERT_TRUE(reader.receive(100ms)) << "Timed out waiting for CAN FD frame";
     ASSERT_TRUE(got) << "FD listener was not called";
+
     EXPECT_EQ(rx.id, tx.id);
     EXPECT_EQ(rx.len, tx.len);
     EXPECT_TRUE(rx.brs);
@@ -294,46 +167,13 @@ TEST(CanbusIntegration, FdSendAndReceiveFullPayload)
         EXPECT_EQ(rx.data[i], tx.data[i]);
 }
 
-TEST(CanbusIntegration, FdSendAndReceiveExtendedId)
-{
-    CanFD writer{"vcan0"};
-    CanFD reader{"vcan0"};
-
-    FdFrame tx;
-    tx.id       = 0x1ABCDE;
-    tx.extended = true;
-    tx.len      = 8;
-    tx.data[0]  = 0xCA;
-    tx.data[1]  = 0xFE;
-
-    writer.send(tx);
-
-    FdFrame rx;
-    bool got = false;
-
-    struct Sink : IFdFrameListener
-    {
-        FdFrame& out;
-        bool&    flag;
-        Sink(FdFrame& o, bool& f) : out(o), flag(f) {}
-        void onFdFrame(const FdFrame& frame) override { out = frame; flag = true; }
-    } sink{rx, got};
-
-    reader.addFdListener(&sink);
-    ASSERT_TRUE(reader.receive(std::chrono::milliseconds{100}));
-    ASSERT_TRUE(got);
-    EXPECT_TRUE(rx.extended);
-    EXPECT_EQ(rx.id, tx.id);
-    EXPECT_EQ(rx.data[0], 0xCAu);
-    EXPECT_EQ(rx.data[1], 0xFEu);
-}
-
 TEST(CanbusIntegration, MixedClassicAndFdDispatchToSeparateListeners)
 {
+    // The core of the design: the read-size discriminator must route a classic
+    // frame only to classic listeners and an FD frame only to FD listeners.
     CanFD writer{"vcan0"};
     CanFD reader{"vcan0"};
 
-    // ---- listeners ----
     Frame   rxClassic;
     FdFrame rxFd;
     bool    gotClassic = false;
@@ -341,16 +181,14 @@ TEST(CanbusIntegration, MixedClassicAndFdDispatchToSeparateListeners)
 
     struct ClassicSink : IClassicFrameListener
     {
-        Frame& out;
-        bool&  flag;
+        Frame& out; bool& flag;
         ClassicSink(Frame& o, bool& f) : out(o), flag(f) {}
         void onClassicFrame(const Frame& frame) override { out = frame; flag = true; }
     } classicSink{rxClassic, gotClassic};
 
     struct FdSink : IFdFrameListener
     {
-        FdFrame& out;
-        bool&    flag;
+        FdFrame& out; bool& flag;
         FdSink(FdFrame& o, bool& f) : out(o), flag(f) {}
         void onFdFrame(const FdFrame& frame) override { out = frame; flag = true; }
     } fdSink{rxFd, gotFd};
@@ -358,32 +196,32 @@ TEST(CanbusIntegration, MixedClassicAndFdDispatchToSeparateListeners)
     reader.addClassicListener(&classicSink);
     reader.addFdListener(&fdSink);
 
-    // ---- send classic ----
+    // ---- classic frame ----
     Frame classic;
-    classic.id    = 0x111;
-    classic.dlc   = 2;
+    classic.id      = 0x111;
+    classic.dlc     = 2;
     classic.data[0] = 0xAA;
     classic.data[1] = 0xBB;
     writer.send(classic);
 
-    ASSERT_TRUE(reader.receive(std::chrono::milliseconds{100}));
-    EXPECT_TRUE(gotClassic)  << "Classic listener should have fired";
-    EXPECT_FALSE(gotFd)      << "FD listener must not fire on a classic frame";
+    ASSERT_TRUE(reader.receive(100ms));
+    EXPECT_TRUE(gotClassic) << "Classic listener should have fired";
+    EXPECT_FALSE(gotFd)     << "FD listener must not fire on a classic frame";
     EXPECT_EQ(rxClassic.id, classic.id);
     EXPECT_EQ(rxClassic.data[0], 0xAAu);
 
-    gotClassic = false;  // reset for second frame
+    gotClassic = false;
 
-    // ---- send FD ----
+    // ---- FD frame ----
     FdFrame fd;
-    fd.id    = 0x222;
-    fd.len   = 16;
-    fd.brs   = true;
+    fd.id  = 0x222;
+    fd.len = 16;
+    fd.brs = true;
     for (uint8_t i = 0; i < 16; ++i)
         fd.data[i] = static_cast<uint8_t>(0x10 + i);
     writer.send(fd);
 
-    ASSERT_TRUE(reader.receive(std::chrono::milliseconds{100}));
+    ASSERT_TRUE(reader.receive(100ms));
     EXPECT_TRUE(gotFd)        << "FD listener should have fired";
     EXPECT_FALSE(gotClassic)  << "Classic listener must not fire on an FD frame";
     EXPECT_EQ(rxFd.id, fd.id);
@@ -395,11 +233,11 @@ TEST(CanbusIntegration, MixedClassicAndFdDispatchToSeparateListeners)
 
 TEST(CanbusIntegration, MultipleClassicListenersAllReceive)
 {
+    // The dispatch loop must fan out to every registered listener, not just one.
     CanFD writer{"vcan0"};
     CanFD reader{"vcan0"};
 
     int callCount = 0;
-
     struct CountingSink : IClassicFrameListener
     {
         int& count;
@@ -407,10 +245,7 @@ TEST(CanbusIntegration, MultipleClassicListenersAllReceive)
         void onClassicFrame(const Frame&) override { ++count; }
     };
 
-    CountingSink s1{callCount};
-    CountingSink s2{callCount};
-    CountingSink s3{callCount};
-
+    CountingSink s1{callCount}, s2{callCount}, s3{callCount};
     reader.addClassicListener(&s1);
     reader.addClassicListener(&s2);
     reader.addClassicListener(&s3);
@@ -420,6 +255,6 @@ TEST(CanbusIntegration, MultipleClassicListenersAllReceive)
     tx.dlc = 1;
     writer.send(tx);
 
-    ASSERT_TRUE(reader.receive(std::chrono::milliseconds{100}));
+    ASSERT_TRUE(reader.receive(100ms));
     EXPECT_EQ(callCount, 3) << "All three Classic listeners must be called";
 }

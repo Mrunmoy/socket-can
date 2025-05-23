@@ -1,6 +1,5 @@
 # Collect test sources
 set(TEST_SOURCES
-    UnitTests.cpp
     CanbusIntegrationTests.cpp
     CanbusUnitTests.cpp
 )

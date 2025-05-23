@@ -67,6 +67,11 @@ struct FdFrame
     std::array<uint8_t, CANFD_MAX_DLEN> data{};    // CAN FD payload (64 bytes)
 };
 
+// The FD payload contract: CAN FD carries up to 64 bytes.
+static_assert(CANFD_MAX_DLEN == 64, "CAN FD payload must be 64 bytes");
+static_assert(FdFrame{}.data.size() == CANFD_MAX_DLEN,
+              "FdFrame payload must match CANFD_MAX_DLEN");
+
 // ---------------------------------------------------------------------------
 // Listener interfaces — implement to receive dispatched frames
 // ---------------------------------------------------------------------------
