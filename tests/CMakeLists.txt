@@ -49,29 +49,12 @@ target_link_libraries(socketcan_tests PRIVATE socketcan GTest::GTest GTest::Main
 # --------------------------------------------------------------
 # Register main test with CTest
 # --------------------------------------------------------------
+# The integration tests need vcan0, which the dev container's entrypoint brings
+# up on start (see .devcontainer/). When running outside the container, create
+# it once with:
+#   sudo modprobe vcan && sudo ip link add dev vcan0 type vcan && sudo ip link set up vcan0
 add_test(NAME socketcan_tests
          COMMAND socketcan_tests)
-
-# --------------------------------------------------------------
-# vcan0 setup fixture
-# --------------------------------------------------------------
-
-# 1. Add setup_vcan test that runs the script
-add_test(
-    NAME setup_vcan
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/setup_vcan.sh
-)
-
-# 2. Mark this test as a fixture setup step
-set_tests_properties(setup_vcan PROPERTIES
-    FIXTURES_SETUP VcanSetup
-)
-
-# 3. Require the fixture for the main test
-set_tests_properties(socketcan_tests PROPERTIES
-    FIXTURES_REQUIRED VcanSetup
-)
-
 
 # Register GTest tests individually
 include(GoogleTest)

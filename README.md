@@ -169,13 +169,16 @@ interface.
 ### VS Code
 
 Open the folder and choose **Reopen in Container**. The container is granted
-`NET_ADMIN` + `SYS_MODULE` and mounts `/lib/modules` read-only so it can bring
-up `vcan0`; `tests/setup_vcan.sh` runs automatically on create.
+`NET_ADMIN` + `SYS_MODULE` and mounts `/lib/modules` read-only, and its
+entrypoint brings `vcan0` up automatically on start — no setup step needed.
 
 > The host kernel must provide the `vcan` module (standard on Ubuntu). The
 > container shares the host kernel, so `modprobe vcan` loads it there.
 
 ### Plain Docker (CI-style)
+
+`vcan0` is created by the image entrypoint, so the test command is just build +
+ctest:
 
 ```bash
 docker build -f .devcontainer/Dockerfile -t socketcan-dev .devcontainer
@@ -185,18 +188,21 @@ docker run --rm \
     -v /lib/modules:/lib/modules:ro \
     -v "$PWD":/workspace -w /workspace \
     socketcan-dev \
-    bash -c 'tests/setup_vcan.sh && \
-             cmake -S . -B build -DBUILD_TESTING=ON && \
+    bash -c 'cmake -S . -B build -DBUILD_TESTING=ON && \
              cmake --build build -j && \
              (cd build && ctest --output-on-failure)'
 ```
 
-## Building and Running Tests with CMake
+## Building and Running Tests with CMake (outside the container)
+
+The integration tests need `vcan0`. Create it once on the host, then build:
 
 ```bash
-./tests/setup_vcan.sh        # create vcan0 (uses sudo on a dev host)
-mkdir build
-cd build
+sudo modprobe vcan
+sudo ip link add dev vcan0 type vcan
+sudo ip link set up vcan0
+
+mkdir build && cd build
 cmake .. -DBUILD_TESTING=ON
 cmake --build .
 ctest --output-on-failure
@@ -208,12 +214,11 @@ ctest --output-on-failure
 .
 ├── .devcontainer/
 │   ├── Dockerfile
-│   └── devcontainer.json
+│   ├── devcontainer.json
+│   └── entrypoint.sh      # brings up vcan0 on container start
 ├── CMakeLists.txt
 ├── SocketCan.hpp          # header-only: BasicCanbus<EnableFd> + aliases
 └── tests/
-    ├── setup_vcan.sh
-    ├── UnitTests.cpp
     ├── CanbusUnitTests.cpp
     └── CanbusIntegrationTests.cpp
 ```
