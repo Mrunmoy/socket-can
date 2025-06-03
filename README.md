@@ -166,6 +166,22 @@ The repository ships a `.devcontainer/` with the full toolchain (GCC, CMake,
 GoogleTest, pkg-config) plus `iproute2`/`kmod`/`can-utils` for the virtual CAN
 interface.
 
+### Quick start — `./build.py`
+
+The `build.py` helper wraps the Docker commands (it builds the image on first
+use and hands build artifacts back to your user):
+
+```bash
+./build.py test      # build + run the test suite (default)
+./build.py build     # configure + build only
+./build.py shell     # interactive shell, vcan0 already up
+./build.py image     # (re)build the Docker image
+./build.py clean     # remove build/
+```
+
+The rest of this section documents the underlying commands if you'd rather run
+them directly.
+
 ### VS Code
 
 Open the folder and choose **Reopen in Container**. The container is granted
@@ -216,6 +232,7 @@ ctest --output-on-failure
 │   ├── Dockerfile
 │   ├── devcontainer.json
 │   └── entrypoint.sh      # brings up vcan0 on container start
+├── build.py               # Docker build/test helper
 ├── CMakeLists.txt
 ├── SocketCan.hpp          # header-only: BasicCanbus<EnableFd> + aliases
 └── tests/
