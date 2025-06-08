@@ -1,0 +1,28 @@
+{
+    "name": "socketcan-cpp",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": "."
+    },
+
+    // CAN FD integration tests need a virtual CAN interface (vcan0). The image
+    // entrypoint brings vcan0 up on container start; these caps/mount let it.
+    // NET_ADMIN creates the link; SYS_MODULE + the read-only /lib/modules mount
+    // let modprobe load the host's vcan module if it isn't already loaded.
+    "runArgs": [
+        "--cap-add=NET_ADMIN",
+        "--cap-add=SYS_MODULE"
+    ],
+    "mounts": [
+        "source=/lib/modules,target=/lib/modules,type=bind,readonly"
+    ],
+
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.cpptools",
+                "ms-vscode.cmake-tools"
+            ]
+        }
+    }
+}
