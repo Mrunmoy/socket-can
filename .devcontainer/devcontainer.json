@@ -5,8 +5,8 @@
         "context": "."
     },
 
-    // CAN FD integration tests need a virtual CAN interface (vcan0). The image
-    // entrypoint brings vcan0 up on container start; these caps/mount let it.
+    // CAN FD integration tests need a virtual CAN interface (can0). The image
+    // entrypoint brings can0 up on container start; these caps/mount let it.
     // NET_ADMIN creates the link; SYS_MODULE + the read-only /lib/modules mount
     // let modprobe load the host's vcan module if it isn't already loaded.
     "runArgs": [

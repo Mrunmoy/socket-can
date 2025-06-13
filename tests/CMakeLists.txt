@@ -49,10 +49,10 @@ target_link_libraries(socketcan_tests PRIVATE socketcan GTest::GTest GTest::Main
 # --------------------------------------------------------------
 # Register main test with CTest
 # --------------------------------------------------------------
-# The integration tests need vcan0, which the dev container's entrypoint brings
+# The integration tests need can0, which the dev container's entrypoint brings
 # up on start (see .devcontainer/). When running outside the container, create
 # it once with:
-#   sudo modprobe vcan && sudo ip link add dev vcan0 type vcan && sudo ip link set up vcan0
+#   sudo modprobe vcan && sudo ip link add dev can0 type vcan && sudo ip link set up can0
 add_test(NAME socketcan_tests
          COMMAND socketcan_tests)
 

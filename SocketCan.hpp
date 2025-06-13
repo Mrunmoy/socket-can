@@ -113,7 +113,7 @@ public:
     // Maximum number of listeners of each type (zero-heap, fixed-size arrays).
     static constexpr std::size_t MaxListeners = 8;
 
-    // Open and bind to a CAN interface (e.g. "vcan0", "can0").
+    // Open and bind to a CAN interface (e.g. "can0").
     // loopback=false if you don't want to see your own frames.
     // When EnableFd is true but the interface/kernel cannot support CAN FD, the
     // socket falls back to classic-only and fdEnabled() reports false.

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Dev helper: build/test the SocketCAN library inside the Docker dev container.
 
-vcan0 is brought up automatically by the container entrypoint.
+can0 is brought up automatically by the container entrypoint.
 
 Usage:
     ./build.py test      build the library and run the test suite   (default)
     ./build.py build     configure + build only (no tests)
-    ./build.py shell     open an interactive shell (vcan0 already up)
+    ./build.py shell     open an interactive shell (can0 already up)
     ./build.py image     (re)build the Docker image
     ./build.py clean     remove the build/ directory
 """

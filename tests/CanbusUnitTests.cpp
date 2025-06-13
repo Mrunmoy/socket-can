@@ -23,7 +23,7 @@ TEST(CanbusUnit, ConstructorThrowsOnInvalidInterface)
 
 TEST(CanbusUnit, ClassicSendRejectsInvalidFrames)
 {
-    CanFD bus{"vcan0"};
+    CanFD bus{"can0"};
 
     {   // DLC > 8 is not a valid Classic CAN length
         Frame f;
@@ -56,7 +56,7 @@ TEST(CanbusUnit, ClassicSendRejectsInvalidFrames)
 
 TEST(CanbusUnit, FdSendRejectsInvalidFrames)
 {
-    CanFD bus{"vcan0"};
+    CanFD bus{"can0"};
 
     {   // len beyond CANFD_MAX_DLEN (64)
         FdFrame f;
@@ -85,7 +85,7 @@ TEST(CanbusUnit, FdSendRejectsInvalidFrames)
 
 TEST(CanbusUnit, MoveConstructorTransfersFd)
 {
-    CanFD original{"vcan0"};
+    CanFD original{"can0"};
     int original_fd = original.fd();
 
     CanFD moved{std::move(original)};
@@ -96,10 +96,10 @@ TEST(CanbusUnit, MoveConstructorTransfersFd)
 
 TEST(CanbusUnit, MoveAssignmentTransfersFd)
 {
-    CanFD a{"vcan0"};
+    CanFD a{"can0"};
     int fd_a = a.fd();
 
-    CanFD b{"vcan0"};   // b's own fd is closed by the move-assign
+    CanFD b{"can0"};   // b's own fd is closed by the move-assign
 
     b = std::move(a);
 
@@ -109,7 +109,7 @@ TEST(CanbusUnit, MoveAssignmentTransfersFd)
 
 TEST(CanbusUnit, OperationsThrowOnClosedBus)
 {
-    CanFD bus{"vcan0"};
+    CanFD bus{"can0"};
     CanFD sink{std::move(bus)};   // bus is now closed (fd == -1)
 
     Frame   classic;
@@ -127,7 +127,7 @@ TEST(CanbusUnit, OperationsThrowOnClosedBus)
 
 TEST(CanbusUnit, ReceiveReturnsFalseOnTimeout)
 {
-    CanFD reader{"vcan0"};
+    CanFD reader{"can0"};
 
     Frame f;
     EXPECT_FALSE(reader.receive(f, std::chrono::milliseconds{0}))
@@ -155,14 +155,14 @@ namespace
 
 TEST(CanbusUnit, AddListenerRejectsNull)
 {
-    CanFD bus{"vcan0"};
+    CanFD bus{"can0"};
     EXPECT_THROW(bus.addClassicListener(nullptr), CanError);
     EXPECT_THROW(bus.addFdListener(nullptr), CanError);
 }
 
 TEST(CanbusUnit, AddClassicListenerThrowsWhenFull)
 {
-    CanFD bus{"vcan0"};
+    CanFD bus{"can0"};
     NoopClassicListener listeners[CanFD::MaxListeners + 1];
 
     for (std::size_t i = 0; i < CanFD::MaxListeners; ++i)
@@ -173,7 +173,7 @@ TEST(CanbusUnit, AddClassicListenerThrowsWhenFull)
 
 TEST(CanbusUnit, AddFdListenerThrowsWhenFull)
 {
-    CanFD bus{"vcan0"};
+    CanFD bus{"can0"};
     NoopFdListener listeners[CanFD::MaxListeners + 1];
 
     for (std::size_t i = 0; i < CanFD::MaxListeners; ++i)
@@ -221,11 +221,11 @@ TEST(CanbusUnit, FdMembersAreCompileTimeGatedByType)
 
 TEST(CanbusUnit, FdEnabledReflectsSocketType)
 {
-    CanFD      fdBus{"vcan0"};
-    CanClassic classicBus{"vcan0"};
+    CanFD      fdBus{"can0"};
+    CanClassic classicBus{"can0"};
 
     EXPECT_TRUE(fdBus.fdEnabled())
-        << "vcan0 is FD-capable; the FD socket type must enable CAN_RAW_FD_FRAMES";
+        << "can0 is FD-capable; the FD socket type must enable CAN_RAW_FD_FRAMES";
     EXPECT_FALSE(classicBus.fdEnabled())
         << "classic-only socket never enables CAN FD";
 }

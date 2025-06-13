@@ -54,8 +54,9 @@ one. A `CanClassic` never receives CAN FD frames (the kernel filters them).
 If the interface/kernel cannot support CAN FD, an FD socket falls back to
 classic-only and `fdEnabled()` reports `false`.
 
-### Integration tests using VCAN
-Tests automatically create `vcan0` using a test fixture.
+### Integration tests on can0
+Integration tests run against `can0`. In the dev container `can0` is a virtual
+(`vcan`) interface created on start, so no hardware is needed.
 
 ## Include the library
 
@@ -73,7 +74,7 @@ using namespace SocketCAN;
 using namespace SocketCAN;
 
 int main() {
-    CanClassic bus{"vcan0"};
+    CanClassic bus{"can0"};
 
     Frame f{};
     f.id = 0x123;
@@ -101,7 +102,7 @@ int main() {
 using namespace SocketCAN;
 
 int main() {
-    CanFD bus{"vcan0"};
+    CanFD bus{"can0"};
 
     FdFrame f{};
     f.id  = 0x456;
@@ -142,7 +143,7 @@ struct MyFdHandler : IFdFrameListener {
 };
 
 int main() {
-    CanFD bus{"vcan0"};
+    CanFD bus{"can0"};
 
     MyClassicHandler classicHandler;
     MyFdHandler      fdHandler;
@@ -174,7 +175,7 @@ use and hands build artifacts back to your user):
 ```bash
 ./build.py test      # build + run the test suite (default)
 ./build.py build     # configure + build only
-./build.py shell     # interactive shell, vcan0 already up
+./build.py shell     # interactive shell, can0 already up
 ./build.py image     # (re)build the Docker image
 ./build.py clean     # remove build/
 ```
@@ -186,14 +187,14 @@ them directly.
 
 Open the folder and choose **Reopen in Container**. The container is granted
 `NET_ADMIN` + `SYS_MODULE` and mounts `/lib/modules` read-only, and its
-entrypoint brings `vcan0` up automatically on start — no setup step needed.
+entrypoint brings `can0` up automatically on start — no setup step needed.
 
 > The host kernel must provide the `vcan` module (standard on Ubuntu). The
 > container shares the host kernel, so `modprobe vcan` loads it there.
 
 ### Plain Docker (CI-style)
 
-`vcan0` is created by the image entrypoint, so the test command is just build +
+`can0` is created by the image entrypoint, so the test command is just build +
 ctest:
 
 ```bash
@@ -211,12 +212,12 @@ docker run --rm \
 
 ## Building and Running Tests with CMake (outside the container)
 
-The integration tests need `vcan0`. Create it once on the host, then build:
+The integration tests need `can0`. Create it once on the host, then build:
 
 ```bash
 sudo modprobe vcan
-sudo ip link add dev vcan0 type vcan
-sudo ip link set up vcan0
+sudo ip link add dev can0 type vcan
+sudo ip link set up can0
 
 mkdir build && cd build
 cmake .. -DBUILD_TESTING=ON
@@ -231,7 +232,7 @@ ctest --output-on-failure
 ├── .devcontainer/
 │   ├── Dockerfile
 │   ├── devcontainer.json
-│   └── entrypoint.sh      # brings up vcan0 on container start
+│   └── entrypoint.sh      # brings up can0 on container start
 ├── build.py               # Docker build/test helper
 ├── CMakeLists.txt
 ├── SocketCan.hpp          # header-only: BasicCanbus<EnableFd> + aliases

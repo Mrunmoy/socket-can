@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Container entrypoint: bring up the virtual CAN interface (vcan0) that the
+# Container entrypoint: bring up the virtual CAN interface (can0) that the
 # integration tests use, then exec the requested command. Runs as root inside
 # the container, so no sudo is needed.
 #
@@ -13,11 +13,11 @@ if ! lsmod | grep -q "^vcan"; then
         || echo "entrypoint: could not load vcan module (need --cap-add=SYS_MODULE and a /lib/modules mount)" >&2
 fi
 
-if ! ip link show vcan0 >/dev/null 2>&1; then
-    ip link add dev vcan0 type vcan 2>/dev/null \
-        || echo "entrypoint: could not create vcan0 (need --cap-add=NET_ADMIN)" >&2
+if ! ip link show can0 >/dev/null 2>&1; then
+    ip link add dev can0 type vcan 2>/dev/null \
+        || echo "entrypoint: could not create can0 (need --cap-add=NET_ADMIN)" >&2
 fi
 
-ip link set vcan0 up 2>/dev/null || true
+ip link set can0 up 2>/dev/null || true
 
 exec "$@"
