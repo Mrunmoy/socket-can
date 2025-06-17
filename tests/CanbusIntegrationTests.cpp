@@ -2,20 +2,61 @@
 #include "SocketCan.hpp"
 
 #include <chrono>
+#include <cstdlib>
+#include <string>
+
+#include <net/if.h>
 
 using namespace std::chrono_literals;
 using namespace SocketCAN;
 
-// All tests run against the can0 fixture created by setup_vcan.sh.
+// Integration tests talk to a real kernel CAN interface through the default
+// (POSIX) socket API. They use can0 unless SOCKETCAN_TEST_IFACE names another
+// interface. The dev container brings can0 up as a virtual (vcan) device.
+// When the interface is missing (or the kernel has no CAN support) the tests
+// are skipped rather than failed, so the unit tests still gate every build.
+
+class CanbusIntegration : public ::testing::Test
+{
+protected:
+    static std::string iface()
+    {
+        const char* env = std::getenv("SOCKETCAN_TEST_IFACE");
+        return (env && *env) ? env : "can0";
+    }
+
+    void SetUp() override
+    {
+        if (::if_nametoindex(iface().c_str()) == 0)
+            GTEST_SKIP() << iface() << " not present; see README to bring it up";
+    }
+
+    const std::string ifname = iface();
+};
+
+TEST_F(CanbusIntegration, ConstructorThrowsOnInvalidInterface)
+{
+    EXPECT_THROW({ CanFD bus{"does_not_exist0"}; }, CanError);
+}
+
+TEST_F(CanbusIntegration, FdEnabledReflectsSocketType)
+{
+    CanFD      fdBus{ifname};
+    CanClassic classicBus{ifname};
+
+    EXPECT_TRUE(fdBus.fdEnabled())
+        << ifname << " should be FD-capable (vcan is; real hardware needs 'fd on')";
+    EXPECT_FALSE(classicBus.fdEnabled());
+}
 
 // ---------------------------------------------------------------------------
 // Classic CAN round-trips
 // ---------------------------------------------------------------------------
 
-TEST(CanbusIntegration, SendAndReceiveOnVcan0)
+TEST_F(CanbusIntegration, SendAndReceiveClassic)
 {
-    CanFD writer{"can0"};
-    CanFD reader{"can0"};
+    CanFD writer{ifname};
+    CanFD reader{ifname};
 
     Frame tx;
     tx.id      = 0x123;
@@ -38,12 +79,12 @@ TEST(CanbusIntegration, SendAndReceiveOnVcan0)
         EXPECT_EQ(rx.data[i], tx.data[i]);
 }
 
-TEST(CanbusIntegration, SendAndReceiveExtendedId)
+TEST_F(CanbusIntegration, SendAndReceiveExtendedId)
 {
     // Exercises the EFF flag/mask encode+decode path, which the standard-ID
     // round-trip never touches.
-    CanFD writer{"can0"};
-    CanFD reader{"can0"};
+    CanFD writer{ifname};
+    CanFD reader{ifname};
 
     Frame tx;
     tx.id       = 0x1ABCDE;   // 29-bit ID
@@ -64,12 +105,12 @@ TEST(CanbusIntegration, SendAndReceiveExtendedId)
         EXPECT_EQ(rx.data[i], tx.data[i]);
 }
 
-TEST(CanbusIntegration, RtrFrameSendAndReceive)
+TEST_F(CanbusIntegration, RtrFrameSendAndReceive)
 {
     // RTR flag must round-trip (set on send, decoded on receive). Complements
     // the unit-level RTR *rejection* test with the valid path.
-    CanFD writer{"can0"};
-    CanFD reader{"can0"};
+    CanFD writer{ifname};
+    CanFD reader{ifname};
 
     Frame tx;
     tx.id  = 0x300;
@@ -85,12 +126,12 @@ TEST(CanbusIntegration, RtrFrameSendAndReceive)
     EXPECT_EQ(rx.dlc, 4);
 }
 
-TEST(CanbusIntegration, NonBlockingReceiveTimesOutThenReads)
+TEST_F(CanbusIntegration, NonBlockingReceiveTimesOutThenReads)
 {
     // Only test of the blocking=false constructor path (fcntl O_NONBLOCK)
     // combined with the empty -> data -> empty poll cycle.
-    CanFD writer{"can0"};
-    CanFD reader{"can0", true, false};
+    CanFD writer{ifname};
+    CanFD reader{ifname, true, false};
 
     Frame rx;
     EXPECT_FALSE(reader.receive(rx, 0ms)) << "buffer should start empty";
@@ -112,13 +153,13 @@ TEST(CanbusIntegration, NonBlockingReceiveTimesOutThenReads)
 // Mixed-mode behaviour on the FD socket
 // ---------------------------------------------------------------------------
 
-TEST(CanbusIntegration, DirectReceiveThrowsOnFdFrame)
+TEST_F(CanbusIntegration, DirectReceiveThrowsOnFdFrame)
 {
     // The direct receive(Frame&) overload cannot represent an FD frame, so it
     // must throw rather than silently truncate — steering users to the
     // listener-based receive() for mixed traffic.
-    CanFD writer{"can0"};
-    CanFD reader{"can0"};
+    CanFD writer{ifname};
+    CanFD reader{ifname};
 
     FdFrame fd;
     fd.id  = 0x321;
@@ -132,10 +173,10 @@ TEST(CanbusIntegration, DirectReceiveThrowsOnFdFrame)
     EXPECT_THROW(reader.receive(rx, 100ms), CanError);
 }
 
-TEST(CanbusIntegration, FdSendAndReceiveFullPayload)
+TEST_F(CanbusIntegration, FdSendAndReceiveFullPayload)
 {
-    CanFD writer{"can0"};
-    CanFD reader{"can0"};
+    CanFD writer{ifname};
+    CanFD reader{ifname};
 
     FdFrame tx;
     tx.id  = 0x456;
@@ -167,12 +208,12 @@ TEST(CanbusIntegration, FdSendAndReceiveFullPayload)
         EXPECT_EQ(rx.data[i], tx.data[i]);
 }
 
-TEST(CanbusIntegration, MixedClassicAndFdDispatchToSeparateListeners)
+TEST_F(CanbusIntegration, MixedClassicAndFdDispatchToSeparateListeners)
 {
     // The core of the design: the read-size discriminator must route a classic
     // frame only to classic listeners and an FD frame only to FD listeners.
-    CanFD writer{"can0"};
-    CanFD reader{"can0"};
+    CanFD writer{ifname};
+    CanFD reader{ifname};
 
     Frame   rxClassic;
     FdFrame rxFd;
@@ -231,11 +272,11 @@ TEST(CanbusIntegration, MixedClassicAndFdDispatchToSeparateListeners)
         EXPECT_EQ(rxFd.data[i], static_cast<uint8_t>(0x10 + i));
 }
 
-TEST(CanbusIntegration, MultipleClassicListenersAllReceive)
+TEST_F(CanbusIntegration, MultipleClassicListenersAllReceive)
 {
     // The dispatch loop must fan out to every registered listener, not just one.
-    CanFD writer{"can0"};
-    CanFD reader{"can0"};
+    CanFD writer{ifname};
+    CanFD reader{ifname};
 
     int callCount = 0;
     struct CountingSink : IClassicFrameListener

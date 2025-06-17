@@ -1,7 +1,9 @@
 # Collect test sources
 set(TEST_SOURCES
-    CanbusIntegrationTests.cpp
+    FrameCodecTests.cpp
+    ListenerRegistryTests.cpp
     CanbusUnitTests.cpp
+    CanbusIntegrationTests.cpp
 )
 
 # Locate GTest — prefer the CMake package, fall back to manual paths
@@ -49,12 +51,12 @@ target_link_libraries(socketcan_tests PRIVATE socketcan GTest::GTest GTest::Main
 # --------------------------------------------------------------
 # Register main test with CTest
 # --------------------------------------------------------------
-# The integration tests need can0, which the dev container's entrypoint brings
-# up on start (see .devcontainer/). When running outside the container, create
-# it once with:
+# Unit tests use an injected fake socket API and need no CAN interface.
+# Integration tests need can0, which the dev container's entrypoint brings up
+# on start (see .devcontainer/); without it they are reported as skipped.
+# Outside the container, create it once with:
 #   sudo modprobe vcan && sudo ip link add dev can0 type vcan && sudo ip link set up can0
-add_test(NAME socketcan_tests
-         COMMAND socketcan_tests)
+target_compile_options(socketcan_tests PRIVATE -Wall -Wextra -Wpedantic)
 
 # Register GTest tests individually
 include(GoogleTest)
