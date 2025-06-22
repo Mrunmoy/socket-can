@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake g++ libgtest-dev iproute2
+
+      - name: Bring up can0 (virtual CAN)
+        run: |
+          sudo apt-get install -y "linux-modules-extra-$(uname -r)" || true
+          sudo modprobe vcan
+          sudo ip link add dev can0 type vcan
+          sudo ip link set up can0
+          ip -details link show can0
+
+      - name: Build
+        run: |
+          cmake -S . -B build -DBUILD_TESTING=ON
+          cmake --build build -j
+
+      - name: Test
+        run: cd build && ctest --output-on-failure
