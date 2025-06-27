@@ -1,71 +1,45 @@
-# SocketCAN C++ Library 
-Based on https://docs.kernel.org/networking/can.html
+# SocketCAN C++ Library
 
-A modern, safe, and test-driven C++17 wrapper for Linux SocketCAN.
+A modern, safe, test-driven, header-only C++17 wrapper for Linux SocketCAN.
 
-This library provides:
+This library is written to follow the official Linux kernel SocketCAN
+documentation, **[SocketCAN - Controller Area Network](https://docs.kernel.org/networking/can.html)**
+(`Documentation/networking/can.rst` in the kernel tree). Every socket call,
+option and frame layout used here comes from that document, and the code
+comments name the section they implement (for example
+`docs: "RAW Socket Option CAN_RAW_FD_FRAMES"`). If anything here disagrees with the kernel docs, the kernel docs win
+and it is a bug in this library.
 
-- RAII-safe socket types: `SocketCAN::CanFD` (Classic + CAN FD) and `SocketCAN::CanClassic` (classic-only)
-- Strongly-typed `SocketCAN::Frame` (Classic CAN) and `SocketCAN::FdFrame` (CAN FD) structures
-- Support for both **Classic CAN** (up to 8 bytes) and **CAN FD** (up to 64 bytes) — the mode is a compile-time property of the socket type
-- Separate listener interfaces (`IClassicFrameListener`, `IFdFrameListener`) — register as many as you need; each frame type dispatches only to matching listeners
-- Blocking and non-blocking receive (with timeout support)
-- Support for
-  - Standard (11-bit) CAN IDs
-  - Extended (29-bit) CAN IDs
-  - RTR frames (Classic CAN only)
-  - CAN FD bit-rate switch (BRS) and error state indicator (ESI) flags
-  - Optional loopback suppression
-  - CAN filters
-- Zero heap allocation — listener slots are fixed-size arrays (`MaxListeners = 8` per type)
-- Clean error handling via `SocketCAN::CanError`
-- Full unit + integration test suite
-- VCAN0 virtual CAN interface fixture for integration tests
-- Docker dev container with the full toolchain + vcan tooling
+| Kernel docs section | What this library does with it |
+| --- | --- |
+| How to use SocketCAN | `socket(PF_CAN, SOCK_RAW, CAN_RAW)`, `SIOCGIFINDEX`, `bind()`; `struct can_frame` / `struct canfd_frame` behind `Frame` / `FdFrame` |
+| RAW Socket Option CAN_RAW_LOOPBACK | `SocketOptions::loopback` |
+| RAW Socket Option CAN_RAW_FD_FRAMES | `CanFD`; Classic vs FD frames told apart by `CAN_MTU` / `CANFD_MTU`; `ENOPROTOOPT` fallback to Classic |
+| CAN FD (Flexible Data Rate) Driver Support | `FdFrame::len` validation, `bitrate` / `dbitrate` / `fd on` setup |
+| The Virtual CAN Driver (vcan) | `can0` backed by `vcan` in the dev container and CI |
 
 ## Features
 
-### C++17 API
-Encapsulated CAN handling with no raw file descriptors in user code.
+- RAII socket types: `SocketCAN::CanFD` (Classic + CAN FD) and `SocketCAN::CanClassic` (Classic only)
+- Strongly typed `Frame` (Classic CAN) and `FdFrame` (CAN FD) value types
+- CAN FD vs Classic is a **compile-time** property of the socket type
+- Separate listener interfaces (`IClassicFrameListener`, `IFdFrameListener`); each frame goes only to listeners of its type
+- Blocking and non-blocking receive, with timeouts
+- Standard (11-bit) and extended (29-bit) IDs, RTR frames, CAN FD BRS/ESI flags, optional loopback suppression
+- Frame validation before anything reaches the bus, including the CAN FD length rule (0..8, 12, 16, 20, 24, 32, 48, 64)
+- Zero heap allocation: listener slots are fixed-size arrays (`MaxListeners = 8` per type)
+- Errors reported as `SocketCAN::CanError`
+- Injectable system-call layer (`ISocketApi`) so the bus, and code built on it, can be unit tested without CAN hardware
+- Unit tests (no hardware) + integration tests on `can0`, run in CI
 
-### RAII
-Sockets are opened in the constructor and safely closed in the destructor.
-
-### Exceptions on errors
-All system errors produce a `SocketCAN::CanError`.
-
-### Compile-time CAN FD vs Classic
-CAN FD is a compile-time property of the socket type, not a runtime flag. The
-class is the template `BasicCanbus<bool EnableFd>`, with two aliases:
-
-```cpp
-using CanClassic = BasicCanbus<false>;  // Classic-only (kernel default)
-using CanFD      = BasicCanbus<true>;   // Classic + CAN FD
-```
-
-```cpp
-CanFD      fdBus{"can0"};       // CAN_RAW_FD_FRAMES enabled
-CanClassic classicBus{"can0"};  // classic-only socket
-```
-
-The FD-only API (`send(const FdFrame&)`, `addFdListener`) exists **only** on the
-FD type — calling it on a `CanClassic` is a *compile error*, not a runtime
-one. A `CanClassic` never receives CAN FD frames (the kernel filters them).
-If the interface/kernel cannot support CAN FD, an FD socket falls back to
-classic-only and `fdEnabled()` reports `false`.
-
-### Integration tests on can0
-Integration tests run against `can0`. In the dev container `can0` is a virtual
-(`vcan`) interface created on start, so no hardware is needed.
-
-## Include the library
+## Quick start
 
 ```cpp
 #include "SocketCan.hpp"
 using namespace SocketCAN;
 ```
 
-## Classic CAN usage
+### Classic CAN
 
 ```cpp
 #include "SocketCan.hpp"
@@ -93,11 +67,10 @@ int main() {
 }
 ```
 
-## CAN FD usage
+### CAN FD
 
 ```cpp
 #include "SocketCan.hpp"
-#include <iostream>
 
 using namespace SocketCAN;
 
@@ -106,8 +79,8 @@ int main() {
 
     FdFrame f{};
     f.id  = 0x456;
-    f.len = 12;
-    f.brs = true;   // enable bit-rate switch
+    f.len = 12;     // must be a valid CAN FD length
+    f.brs = true;   // bit-rate switch
     for (uint8_t i = 0; i < f.len; ++i)
         f.data[i] = i;
 
@@ -115,11 +88,7 @@ int main() {
 }
 ```
 
-## Listener-based receive (Classic + FD on one socket)
-
-Implement `IClassicFrameListener` and/or `IFdFrameListener`, register them,
-then call `receive()` in your loop. Each frame is dispatched only to listeners
-of the matching type — Classic frames never reach FD listeners and vice versa.
+### Listener-based receive (Classic + FD on one socket)
 
 ```cpp
 #include "SocketCan.hpp"
@@ -129,16 +98,14 @@ using namespace SocketCAN;
 
 struct MyClassicHandler : IClassicFrameListener {
     void onClassicFrame(const Frame& f) override {
-        std::cout << "Classic  ID=0x" << std::hex << f.id
-                  << " DLC=" << std::dec << int(f.dlc) << "\n";
+        std::cout << "Classic  ID=0x" << std::hex << f.id << "\n";
     }
 };
 
 struct MyFdHandler : IFdFrameListener {
     void onFdFrame(const FdFrame& f) override {
         std::cout << "CAN FD   ID=0x" << std::hex << f.id
-                  << " len=" << std::dec << int(f.len)
-                  << (f.brs ? " BRS" : "") << "\n";
+                  << " len=" << std::dec << int(f.len) << "\n";
     }
 };
 
@@ -147,30 +114,169 @@ int main() {
 
     MyClassicHandler classicHandler;
     MyFdHandler      fdHandler;
-
     bus.addClassicListener(&classicHandler);
     bus.addFdListener(&fdHandler);
 
-    // Dispatch loop — each call reads one frame and notifies the right listener
     while (true) {
-        bus.receive(std::chrono::milliseconds{100});
+        bus.receive(std::chrono::milliseconds{100});   // reads one frame, notifies listeners
     }
 }
 ```
 
-Up to `CanFD::MaxListeners` (8) listeners of each type can be registered.
-All registered listeners of a given type are notified for every matching frame.
+Listeners are not owned by the bus and must outlive it.
 
-## Developer Environment (Docker Dev Container)
+### Socket options
 
-The repository ships a `.devcontainer/` with the full toolchain (GCC, CMake,
-GoogleTest, pkg-config) plus `iproute2`/`kmod`/`can-utils` for the virtual CAN
-interface.
+```cpp
+SocketOptions opts;
+opts.loopback = false;   // CAN_RAW_LOOPBACK off: don't see frames from other local sockets
+opts.blocking = false;   // O_NONBLOCK
 
-### Quick start — `./build.py`
+CanFD bus{"can0", opts};
+```
 
-The `build.py` helper wraps the Docker commands (it builds the image on first
-use and hands build artifacts back to your user):
+The older `CanFD bus{"can0", /*loopback*/ true, /*blocking*/ false};` form still works.
+
+## Compile-time CAN FD vs Classic
+
+The bus is the class template `BasicCanbus<bool EnableFd>` with two aliases:
+
+```cpp
+using CanClassic = BasicCanbus<false>;  // Classic only (kernel default)
+using CanFD      = BasicCanbus<true>;   // Classic + CAN FD (CAN_RAW_FD_FRAMES)
+```
+
+The FD-only API (`send(const FdFrame&)`, `addFdListener`) exists **only** on
+`CanFD`; calling it on a `CanClassic` is a compile error. A `CanClassic`
+never receives CAN FD frames because the kernel only delivers `CAN_MTU`
+frames to it (docs: "RAW Socket Option CAN_RAW_FD_FRAMES").
+If the interface or kernel cannot do CAN FD, a `CanFD` socket falls back to
+Classic only and `fdEnabled()` returns `false`.
+
+## Design
+
+The header is split into small parts, each with one job, following the SOLID
+principles and using dependency injection where it pays off.
+
+| Component | Responsibility |
+| --- | --- |
+| `Frame`, `FdFrame` | Plain value types, no behaviour |
+| `FrameCodec` | Validates frames and converts to/from `struct can_frame` / `struct canfd_frame`. Pure functions, no I/O |
+| `ISocketApi` | The system calls the bus needs (`socket`, `setsockopt`, `bind`, `poll`, `read`, `write`, ...) |
+| `PosixSocketApi` | The real Linux implementation of `ISocketApi` |
+| `ListenerRegistry<L, N>` | Fixed-capacity, non-owning observer list |
+| `IClassicFrameListener`, `IFdFrameListener` | What receivers implement (segregated per frame type) |
+| `ICanSender`, `ICanFdSender` | What senders depend on |
+| `BasicCanbus<EnableFd>` | RAII socket that composes the above |
+
+- **Single responsibility:** validation/encoding, system calls, listener
+  bookkeeping and socket lifetime live in separate types.
+- **Open/closed:** new behaviour (tracing, a different platform, a fake) is
+  added by implementing `ISocketApi` or a listener, not by editing the bus.
+- **Liskov substitution:** `CanFD` can be used anywhere an `ICanSender` or
+  `ICanFdSender` is expected; `CanClassic` only where an `ICanSender` is.
+- **Interface segregation:** Classic and FD listeners are separate
+  interfaces, and so are Classic and FD senders.
+- **Dependency inversion:** the bus depends on `ISocketApi`, not on the OS;
+  your code can depend on `ICanSender` / listener interfaces, not on the bus.
+
+### Injecting the socket API
+
+```cpp
+MySocketApi api;                         // implements SocketCAN::ISocketApi
+CanFD bus{"can0", SocketOptions{}, api}; // api must outlive bus
+```
+
+Without an argument the bus uses `defaultSocketApi()`, a shared
+`PosixSocketApi`.
+
+### Depending on an abstraction in your own code
+
+```cpp
+class Heartbeat {
+public:
+    explicit Heartbeat(SocketCAN::ICanSender& out) : m_out(out) {}
+    void tick() {
+        SocketCAN::Frame f;
+        f.id = 0x700; f.dlc = 1; f.data[0] = m_counter++;
+        m_out.send(f);
+    }
+private:
+    SocketCAN::ICanSender& m_out;
+    uint8_t m_counter = 0;
+};
+
+SocketCAN::CanClassic bus{"can0"};
+Heartbeat hb{bus};       // production
+// Heartbeat hb{fake};   // unit test, with your own ICanSender fake
+```
+
+## Setting up can0
+
+### Real hardware
+
+Configure the bit rate before bringing the interface up (kernel docs:
+"Setting the CAN Bit-Timing" and "CAN FD (Flexible Data Rate) Driver
+Support"; also `ip link help can`):
+
+```bash
+# Classic CAN at 500 kbit/s
+sudo ip link set can0 type can bitrate 500000
+sudo ip link set up can0
+
+# CAN FD: 500 kbit/s arbitration, 2 Mbit/s data phase
+sudo ip link set can0 type can bitrate 500000 dbitrate 2000000 fd on
+sudo ip link set up can0
+```
+
+### Virtual can0 (no hardware)
+
+For development and the integration tests, `can0` can be a virtual (`vcan`)
+interface:
+
+```bash
+sudo modprobe vcan
+sudo ip link add dev can0 type vcan
+sudo ip link set up can0
+```
+
+`vcan` is CAN FD capable out of the box. The kernel docs name virtual
+interfaces `vcanX` by convention; this project names it `can0` so the same
+code and examples run unchanged on real hardware.
+
+## Tests
+
+The project is developed test first. There are three groups:
+
+| Suite | Needs can0? | Covers |
+| --- | --- | --- |
+| `FrameCodec.*` | No | ID/DLC/length validation, encode/decode round trips |
+| `ListenerRegistry.*` | No | Capacity, null handling, fan-out |
+| `CanbusUnit.*`, `CanbusCompileTime.*` | No | The bus with an injected `FakeSocketApi`: socket setup, error paths and fd cleanup, move semantics, send framing, receive and dispatch, compile-time FD gating |
+| `CanbusIntegration.*` | Yes | Real round trips over `can0` through the kernel |
+
+Integration tests use `can0`, or the interface named by
+`SOCKETCAN_TEST_IFACE`. When that interface does not exist they are reported
+as skipped, so the unit tests still run anywhere.
+
+### Build and run
+
+```bash
+cmake -S . -B build -DBUILD_TESTING=ON
+cmake --build build -j
+cd build && ctest --output-on-failure
+```
+
+CI (GitHub Actions) brings up a virtual `can0` and runs the full suite on
+every push and pull request.
+
+## Developer environment (Docker dev container)
+
+`.devcontainer/` has the full toolchain (GCC, CMake, GoogleTest) plus
+`iproute2`/`kmod`/`can-utils`. Its entrypoint creates `can0` as a `vcan`
+interface on start.
+
+### `./build.py`
 
 ```bash
 ./build.py test      # build + run the test suite (default)
@@ -180,22 +286,16 @@ use and hands build artifacts back to your user):
 ./build.py clean     # remove build/
 ```
 
-The rest of this section documents the underlying commands if you'd rather run
-them directly.
-
 ### VS Code
 
-Open the folder and choose **Reopen in Container**. The container is granted
-`NET_ADMIN` + `SYS_MODULE` and mounts `/lib/modules` read-only, and its
-entrypoint brings `can0` up automatically on start — no setup step needed.
+Open the folder and choose **Reopen in Container**. The container gets
+`NET_ADMIN` + `SYS_MODULE` and a read-only `/lib/modules` mount so the
+entrypoint can load `vcan` and create `can0`.
 
 > The host kernel must provide the `vcan` module (standard on Ubuntu). The
 > container shares the host kernel, so `modprobe vcan` loads it there.
 
-### Plain Docker (CI-style)
-
-`can0` is created by the image entrypoint, so the test command is just build +
-ctest:
+### Plain Docker
 
 ```bash
 docker build -f .devcontainer/Dockerfile -t socketcan-dev .devcontainer
@@ -210,33 +310,32 @@ docker run --rm \
              (cd build && ctest --output-on-failure)'
 ```
 
-## Building and Running Tests with CMake (outside the container)
-
-The integration tests need `can0`. Create it once on the host, then build:
-
-```bash
-sudo modprobe vcan
-sudo ip link add dev can0 type vcan
-sudo ip link set up can0
-
-mkdir build && cd build
-cmake .. -DBUILD_TESTING=ON
-cmake --build .
-ctest --output-on-failure
-```
-
-## Project Structure
+## Project structure
 
 ```
 .
 ├── .devcontainer/
 │   ├── Dockerfile
 │   ├── devcontainer.json
-│   └── entrypoint.sh      # brings up can0 on container start
-├── build.py               # Docker build/test helper
+│   └── entrypoint.sh            # brings up can0 (vcan) on container start
+├── .github/workflows/ci.yml     # build + unit + integration tests
+├── build.py                     # Docker build/test helper
 ├── CMakeLists.txt
-├── SocketCan.hpp          # header-only: BasicCanbus<EnableFd> + aliases
+├── SocketCan.hpp                # the whole library (header-only)
 └── tests/
+    ├── FakeSocketApi.hpp        # ISocketApi test double
+    ├── FrameCodecTests.cpp
+    ├── ListenerRegistryTests.cpp
     ├── CanbusUnitTests.cpp
     └── CanbusIntegrationTests.cpp
 ```
+
+## Reference
+
+- Linux kernel documentation, *SocketCAN - Controller Area Network*:
+  https://docs.kernel.org/networking/can.html
+- Kernel headers used: `<linux/can.h>`, `<linux/can/raw.h>`
+
+## License
+
+MIT, see [LICENSE](LICENSE).

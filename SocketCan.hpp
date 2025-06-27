@@ -4,7 +4,8 @@
 //
 // Follows the Linux kernel SocketCAN documentation:
 //   https://docs.kernel.org/networking/can.html
-// Section references below ("docs §4.1.x") point into that page.
+// Comments name the section of that page they implement, e.g.
+// (docs: "RAW Socket Option CAN_RAW_FD_FRAMES").
 //
 // Layout of this header, one responsibility per component:
 //   CanError                 error type for every failure
@@ -69,7 +70,7 @@ public:
 // Frame types
 // ===========================================================================
 
-// Classic CAN frame: up to 8 bytes of payload (docs §4.1.1, struct can_frame).
+// Classic CAN frame: up to 8 bytes of payload (docs: "How to use SocketCAN").
 struct Frame
 {
     uint32_t id       = 0;              // 11-bit or 29-bit ID
@@ -79,7 +80,7 @@ struct Frame
     std::array<uint8_t, CAN_MAX_DLEN> data{};
 };
 
-// CAN FD frame: up to 64 bytes of payload (docs §4.1.5, struct canfd_frame).
+// CAN FD frame: up to 64 bytes of payload (docs: "How to use SocketCAN").
 struct FdFrame
 {
     uint32_t id       = 0;              // 11-bit or 29-bit ID
@@ -102,8 +103,10 @@ struct FrameCodec
     static constexpr uint32_t kMaxStandardId = CAN_SFF_MASK;   // 0x7FF
     static constexpr uint32_t kMaxExtendedId = CAN_EFF_MASK;   // 0x1FFFFFFF
 
-    // CAN FD payloads map onto a 4-bit DLC, so only these lengths exist on the
-    // wire (docs §4.1.5). Any other length would be padded by the kernel.
+    // canfd_frame.len is a plain 0..64 byte count, but drivers map it to the
+    // 4-bit bus DLC with can_fd_len2dlc(), which rounds any other length up
+    // (docs: "CAN FD (Flexible Data Rate) Driver Support"). Rejecting those
+    // lengths keeps what the receiver sees equal to what was sent.
     static constexpr bool isValidFdLength(uint8_t len)
     {
         if (len <= 8)
@@ -239,7 +242,7 @@ public:
     virtual int     close(int fd) = 0;
 };
 
-// The real Linux implementation, as described in docs §4.1.
+// The real Linux implementation (docs: "How to use SocketCAN").
 class PosixSocketApi final : public ISocketApi
 {
 public:
@@ -415,7 +418,8 @@ namespace detail
 // BasicCanbus: a CAN_RAW socket whose FD mode is fixed at compile time
 // ===========================================================================
 //
-//   EnableFd == true   CAN_RAW_FD_FRAMES is enabled (docs §4.1.5); the socket
+//   EnableFd == true   CAN_RAW_FD_FRAMES is enabled (docs: "RAW Socket Option
+//                      CAN_RAW_FD_FRAMES"); the socket
 //                      sends/receives both Classic and CAN FD frames.
 //                      send(const FdFrame&) and addFdListener() are available.
 //   EnableFd == false  Classic-only socket (the kernel default). CAN FD frames
@@ -511,7 +515,7 @@ public:
 
     // Read one frame and notify every listener of the matching type.
     // Returns false on timeout. The read size tells Classic (CAN_MTU) and FD
-    // (CANFD_MTU) frames apart, as described in docs §4.1.5.
+    // (CANFD_MTU) frames apart (docs: "RAW Socket Option CAN_RAW_FD_FRAMES").
     bool receive(std::chrono::milliseconds timeout = std::chrono::milliseconds{-1})
     {
         requireOpen("receive()");
@@ -577,7 +581,7 @@ private:
     ListenerRegistry<IClassicFrameListener, MaxListeners> m_classicListeners;
     ListenerRegistry<IFdFrameListener, MaxListeners>      m_fdListeners;
 
-    // Steps from docs §4.1: socket(), setsockopt(), bind() to an ifindex.
+    // socket(), setsockopt(), bind() to an ifindex (docs: "How to use SocketCAN").
     void open(const std::string& ifname, const SocketOptions& options)
     {
         if (ifname.size() >= IFNAMSIZ)
@@ -612,8 +616,9 @@ private:
         }
     }
 
-    // CAN_RAW_FD_FRAMES is off by default. If the kernel or interface lacks
-    // CAN FD support, fall back to classic-only and report fdEnabled()=false.
+    // CAN_RAW_FD_FRAMES is off by default; older kernels return ENOPROTOOPT
+    // (docs: "RAW Socket Option CAN_RAW_FD_FRAMES"). Fall back to classic-only
+    // and report fdEnabled()=false in that case.
     void enableFdFrames()
     {
         const int on = 1;
@@ -679,7 +684,8 @@ private:
     }
 
     // can_frame and canfd_frame share the same layout for the first CAN_MTU
-    // bytes (docs §4.1.5), so a classic frame read into a canfd_frame buffer
+    // bytes (docs: "RAW Socket Option CAN_RAW_FD_FRAMES"), so a classic frame
+    // read into a canfd_frame buffer
     // can be viewed as a can_frame.
     static can_frame asClassic(const canfd_frame& buf)
     {
